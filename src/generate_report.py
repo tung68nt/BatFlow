@@ -273,8 +273,8 @@ def get_battery_and_processes():
         'temp': round(temp, 1),
         'total_screen_sec': int(total_screen_sec),
         'session_on_sec': int(session_on_sec),
-        'total_screen_time': f'{total_h}h {total_m:02d}m {total_s:02d}s',
-        'session_screen_time': f'{sess_h}h {sess_m:02d}m {sess_s:02d}s',
+        'total_screen_time': f'{total_h}h : {total_m:02d}m : {total_s:02d}s',
+        'session_screen_time': f'{sess_h}h : {sess_m:02d}m : {sess_s:02d}s',
         'session_start_time': session_start_time,
         'top_apps': top_apps,
         'events': events[-8:][::-1],
@@ -1435,7 +1435,7 @@ def generate_html(data):
             const h = Math.floor(sec / 3600);
             const m = Math.floor((sec % 3600) / 60);
             const s = sec % 60;
-            return `${{h}}h ${{String(m).padStart(2, '0')}}m ${{String(s).padStart(2, '0')}}s`;
+            return `${{h}}h : ${{String(m).padStart(2, '0')}}m : ${{String(s).padStart(2, '0')}}s`;
         }}
 
         setInterval(() => {{
