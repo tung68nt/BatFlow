@@ -171,10 +171,10 @@ struct AboutView: View {
 
             VStack(spacing: 3) {
                 Text("BatFlow")
-                    .font(.system(size: 19, weight: .bold, design: .rounded))
+                    .font(.system(size: 19, weight: .bold))
 
                 Text("Phiên bản 1.0.0 (Build 2026.09.04)")
-                    .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                    .font(.system(size: 11, weight: .semibold))
                     .foregroundColor(Color.secondary)
 
                 Text("Giải pháp Giám sát Dòng Chảy Năng Lượng & Pin cho macOS")
@@ -267,7 +267,7 @@ struct BatFiPopoverView: View {
                             .foregroundColor(Color.blue)
                     }
                     Text("\(model.currentPct)%")
-                        .font(.system(size: 13.5, weight: .semibold, design: .rounded))
+                        .font(.system(size: 13.5, weight: .semibold))
                         .foregroundColor(model.currentPct <= 20 ? Color(NSColor.systemRed) : (model.isCharging ? emeraldGreen : (model.isExtConnected ? Color.blue : colorValue)))
                 }
             }
@@ -367,7 +367,7 @@ struct BatFiPopoverView: View {
                                 .fill(colorDivider)
                                 .frame(height: 0.8)
                             Text("100%")
-                                .font(.system(size: 9, weight: .medium, design: .monospaced))
+                                .font(.system(size: 9, weight: .medium))
                                 .foregroundColor(colorLabel)
                                 .frame(width: 32, alignment: .trailing)
                         }
@@ -380,7 +380,7 @@ struct BatFiPopoverView: View {
                                 .fill(colorDivider)
                                 .frame(height: 0.8)
                             Text("50%")
-                                .font(.system(size: 9, weight: .medium, design: .monospaced))
+                                .font(.system(size: 9, weight: .medium))
                                 .foregroundColor(colorLabel)
                                 .frame(width: 32, alignment: .trailing)
                         }
@@ -393,7 +393,7 @@ struct BatFiPopoverView: View {
                                 .fill(colorDivider)
                                 .frame(height: 0.8)
                             Text("0%")
-                                .font(.system(size: 9, weight: .medium, design: .monospaced))
+                                .font(.system(size: 9, weight: .medium))
                                 .foregroundColor(colorLabel)
                                 .frame(width: 32, alignment: .trailing)
                         }
@@ -476,7 +476,7 @@ struct BatFiPopoverView: View {
                     Text("")
                         .frame(width: 32)
                 }
-                .font(.system(size: 9.5, weight: .regular, design: .monospaced))
+                .font(.system(size: 9.5, weight: .regular))
                 .foregroundColor(colorLabel)
                 .padding(.leading, 8)
                 .padding(.trailing, 8)
@@ -497,7 +497,7 @@ struct BatFiPopoverView: View {
                                 .font(.system(size: 10, weight: .regular))
                                 .foregroundColor(colorLabel)
                             Text(String(format: "%.1f W", model.sysLoadW))
-                                .font(.system(size: 13, weight: .semibold, design: .rounded))
+                                .font(.system(size: 13, weight: .semibold))
                                 .foregroundColor(colorValue)
                         }
                         Spacer()
@@ -507,7 +507,7 @@ struct BatFiPopoverView: View {
                                 .foregroundColor(colorLabel)
                             let wStr = model.isCharging && model.netWatts > 0 ? String(format: "+%.1f W", model.netWatts) : String(format: "%.1f W", model.netWatts)
                             Text(wStr)
-                                .font(.system(size: 13, weight: .semibold, design: .rounded))
+                                .font(.system(size: 13, weight: .semibold))
                                 .foregroundColor(model.isCharging ? emeraldGreen : Color.orange)
                         }
                     }
@@ -518,7 +518,7 @@ struct BatFiPopoverView: View {
                             .foregroundColor(colorLabel)
                         Spacer()
                         Text(String(format: "%.2f V • %d mA", model.voltage, model.amperage))
-                            .font(.system(size: 11, weight: .medium, design: .monospaced))
+                            .font(.system(size: 11, weight: .medium))
                             .foregroundColor(colorValue)
                     }
                 }
@@ -578,7 +578,7 @@ struct BatFiPopoverView: View {
                             Spacer()
                             
                             Text("⌘O")
-                                .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                                .font(.system(size: 10, weight: .semibold))
                                 .foregroundColor(colorLabel)
                                 .padding(.horizontal, 5)
                                 .padding(.vertical, 1.5)
@@ -611,7 +611,7 @@ struct BatFiPopoverView: View {
                             Spacer()
                             
                             Text("v1.0.0")
-                                .font(.system(size: 9.5, weight: .medium, design: .monospaced))
+                                .font(.system(size: 9.5, weight: .medium))
                                 .foregroundColor(colorLabel)
                                 .padding(.horizontal, 5)
                                 .padding(.vertical, 1.5)
@@ -644,7 +644,7 @@ struct BatFiPopoverView: View {
                             Spacer()
                             
                             Text("⌘Q")
-                                .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                                .font(.system(size: 10, weight: .semibold))
                                 .foregroundColor(colorLabel)
                                 .padding(.horizontal, 5)
                                 .padding(.vertical, 1.5)

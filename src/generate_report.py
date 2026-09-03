@@ -530,7 +530,7 @@ def generate_html(data):
     <link rel="icon" type="image/png" href="data:image/png;base64,{icon_b64}">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <style>
         :root {{
             --bg: #f6f6f8;
@@ -542,8 +542,8 @@ def generate_html(data):
             --text-2: #515156;
             --text-3: #86868b;
             --card-shadow: 0 4px 18px rgba(0, 0, 0, 0.04);
-            --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
-            --font-mono: 'JetBrains Mono', monospace;
+            --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'SF Pro Text', sans-serif;
+            --font-mono: var(--font-sans);
         }}
         @media (prefers-color-scheme: dark) {{
             :root {{
