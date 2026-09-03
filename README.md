@@ -1,77 +1,73 @@
-# 🔋 TulieBattery
+# ⚡ BatFlow
 
-> Giải pháp Giám sát & Quản lý Pin Chuyên Sâu dành cho macOS (Apple Silicon & Intel).  
+> Giải pháp Giám sát Dòng Chảy Năng Lượng & Quản lý Pin Chuyên Sâu cho macOS.  
 > Phát triển bởi **Tulie Tech**.
 
 ---
 
-## 🌟 Tính Năng Nổi Bật
+## 🌟 Tính Năng Độc Quyền của BatFlow
 
-- **Menu Bar Chuyên Nghiệp:**
-  - Viên pin hiển thị trực quan dung tích, tự động đổi màu theo độ sáng nền (Light/Dark Mode).
-  - Phân biệt rõ rệt 3 trạng thái nguồn:
-    - ⚡ **Đang nạp sạc (`isCharging`):** Tia sét xanh ngọc lục bảo.
-    - ⏸️ **Giữ mức sạc / Hold sạc (`power bypass`):** Hai vạch dọc `||` màu xanh dương Apple.
-    - 🔋 **Dùng nguồn pin:** Đo dung lượng xả thực tế.
-- **Popover Kính Mờ (Liquid Glass Popover):**
-  - Hiển thị ước tính thời gian chính xác (đến mấy giờ sẽ đầy pin).
+- **Menu Bar Thông Minh:**
+  - Hiển thị dung tích pin thời gian thực, tương thích độ sáng nền (Light/Dark Mode).
+  - Phân biệt rõ rệt 3 trạng thái năng lượng:
+    - ⚡ **Nạp điện (`isCharging`):** Tia sét xanh ngọc lục bảo.
+    - ⏸️ **Giữ sạc / Dòng chảy ngoài (`power bypass`):** Hai vạch dọc `||` xanh dương Apple.
+    - 🔋 **Xả pin:** Đo dung lượng xả thực tế.
+- **Liquid Glass Popover:**
+  - Thời gian dự kiến đầy / cạn chính xác đến từng phút và giờ cụ thể.
   - Tỷ lệ chu kỳ sạc thực tế (`/ 1.000 lần` chuẩn Apple).
-  - Biểu đồ xả nạp và công suất điện tức thời (Watt, Volt, Ampe).
-  - Thẻ điều khiển gom nhóm (Grouped Action Card) tinh tế: Báo cáo chi tiết (`⌘O`), Giới thiệu (`About`), Thoát (`⌘Q`).
-- **Dashboard Phân Tích Chuyên Sâu:**
-  - Cửa sổ chuẩn Native macOS (di chuyển, kéo thả bằng thanh tiêu đề mượt mà).
-  - Thích ứng hoàn hảo theo Light Theme và Dark Theme của hệ thống.
-  - Sơ đồ cổng kết nối Thunderbolt 4 / MagSafe 3 / HDMI / SDXC.
-  - Xếp hạng tiến trình tiêu thụ năng lượng (Top Power Consumers).
-  - So sánh 2 chuẩn đo pin: Chuẩn Apple Settings vs Chuẩn đo thô phần cứng.
-- **Nhẹ & Tiết Kiệm Pin Tuyệt Đối:**
-  - Viết bằng Swift thuần & AppKit/SwiftUI.
-  - Chạy chế độ `LSUIElement = true` ngầm trên thanh Menu Bar, không làm chật Dock.
+  - Thẻ điều khiển gom nhóm (Grouped Action Card) tinh tế:
+    - Báo cáo phân tích chi tiết (`⌘O`)
+    - Giới thiệu BatFlow (`v1.0.0`)
+    - Thoát BatFlow (`⌘Q`)
+- **Dashboard Phân Tích Dòng Chảy Điện Năng (Power Flow):**
+  - Cửa sổ Native macOS có thể di chuyển kéo thả tự do.
+  - Đo lường công suất củ sạc (Watt), dòng nạp vào pin (+W), công suất phần cứng tiêu thụ (W).
+  - Sơ đồ cổng Thunderbolt 4, MagSafe 3, HDMI, SDXC.
+  - Xếp hạng tiến trình ngốn pin (Top Power Consumers).
+  - So sánh đối chiếu 2 chuẩn đo pin: Apple Settings vs Đo thô phần cứng.
+- **Kiến Trúc & Bảo Mật Chuẩn Quốc Tế:**
+  - 100% Hermetic App Bundle, không hardcode đường dẫn người dùng.
+  - Chống XSS qua cơ chế sanitize dữ liệu tiến trình.
+  - Lưu trữ dữ liệu an toàn tại `~/Library/Application Support/BatFlow/`.
 
 ---
 
 ## 📁 Cấu Trúc Dự Án
 
 ```
-/Users/tungnguyen/Code/TulieBattery/
+/Users/tungnguyen/Code/BatFlow/
 ├── src/
-│   ├── BatteryBar.swift       # Mã nguồn chính Swift (Menu Bar, Popover, About Window, WebKit)
-│   └── generate_report.py     # Engine trích xuất số liệu phần cứng & tạo Dashboard HTML
+│   ├── BatFlow.swift          # Mã nguồn chính Swift (Menu Bar, Popover, About Window, WebKit)
+│   └── generate_report.py     # Engine phân tích dữ liệu phần cứng & tạo Dashboard HTML
 ├── resources/
-│   ├── Info.plist             # Metadata, phiên bản, quyền hệ thống
-│   ├── applet.icns            # Icon ứng dụng Apple Continuous Squircle chuẩn Retina
-│   └── battery_icon.png       # Favicon & icon vector 128x128
+│   ├── Info.plist             # Metadata com.tulietech.batflow
+│   ├── applet.icns            # Icon ứng dụng Apple Continuous Squircle Retina
+│   └── battery_icon.png       # Vector icon 128x128
 ├── scripts/
-│   ├── build.sh               # Kịch bản biên dịch 1-click ra /Applications/TulieBattery.app
-│   └── make_dmg.sh            # Kịch bản đóng gói bộ cài đặt .dmg phân phối
+│   ├── build.sh               # Kịch bản biên dịch 1-click ra /Applications/BatFlow.app
+│   └── make_dmg.sh            # Kịch bản đóng gói bộ cài đặt BatFlow.dmg
 ├── releases/
-│   └── TulieBattery-v1.0.0.dmg # File cài đặt DMG hoàn chỉnh
+│   └── BatFlow-v1.0.0.dmg     # File cài đặt DMG nén chính thức
 └── README.md
 ```
 
 ---
 
-## 🛠️ Hướng Dẫn Phát Triển & Cập Nhật Phiên Bản
+## 🛠️ Hướng Dẫn Biên Dịch & Đóng Gói
 
-### 1. Biên dịch và chạy thử nghiệm
-Chạy lệnh sau để build mã nguồn và tự động khởi chạy lại ứng dụng:
+### 1. Biên dịch và khởi chạy:
 ```bash
 ./scripts/build.sh
 ```
 
-### 2. Đóng gói phiên bản mới (.dmg)
-Để tạo file `.dmg` mới cho phiên bản cập nhật (ví dụ `1.0.1`):
+### 2. Đóng gói bộ cài đặt DMG:
 ```bash
-./scripts/make_dmg.sh 1.0.1
+./scripts/make_dmg.sh 1.0.0
 ```
-File cài đặt sẽ được tạo tự động tại:
-- `releases/TulieBattery-v1.0.1.dmg`
-- Màn hình chính `~/Desktop/TulieBattery-v1.0.1.dmg`
-
-### 3. Cập nhật số phiên bản trong Metadata
-Chỉnh sửa file `resources/Info.plist`:
-- `CFBundleShortVersionString`: Số phiên bản (ví dụ: `1.0.1`)
-- `CFBundleVersion`: Mã bản dựng (ví dụ: `2026.09.05`)
+File `.dmg` sẽ được xuất tự động tại:
+- `releases/BatFlow-v1.0.0.dmg`
+- `~/Desktop/BatFlow-v1.0.0.dmg`
 
 ---
 

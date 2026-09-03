@@ -152,7 +152,7 @@ struct MenuRowButtonStyle: ButtonStyle {
     }
 }
 
-// MARK: - About TulieBattery View (Apple Native Aesthetic)
+// MARK: - About BatFlow View (Apple Native Aesthetic)
 struct AboutView: View {
     @Environment(\.colorScheme) var colorScheme
     var isDark: Bool { colorScheme == .dark }
@@ -170,14 +170,14 @@ struct AboutView: View {
             }
 
             VStack(spacing: 3) {
-                Text("TulieBattery")
+                Text("BatFlow")
                     .font(.system(size: 19, weight: .bold, design: .rounded))
 
                 Text("Phiên bản 1.0.0 (Build 2026.09.04)")
                     .font(.system(size: 11, weight: .semibold, design: .monospaced))
                     .foregroundColor(Color.secondary)
 
-                Text("Giải pháp Giám sát & Quản lý Pin Chuyên Sâu cho macOS")
+                Text("Giải pháp Giám sát Dòng Chảy Năng Lượng & Pin cho macOS")
                     .font(.system(size: 11.5, weight: .regular))
                     .foregroundColor(Color.secondary)
                     .multilineTextAlignment(.center)
@@ -568,7 +568,7 @@ struct BatFiPopoverView: View {
                         .background(colorDivider)
                         .padding(.horizontal, 8)
 
-                    // Action 2: About TulieBattery
+                    // Action 2: About BatFlow
                     Button(action: {
                         onOpenAbout()
                     }) {
@@ -578,7 +578,7 @@ struct BatFiPopoverView: View {
                                 .foregroundColor(colorLabel)
                                 .frame(width: 18)
                             
-                            Text("Giới thiệu TulieBattery...")
+                            Text("Giới thiệu BatFlow...")
                                 .font(.system(size: 12, weight: .medium))
                                 .foregroundColor(colorValue)
                             
@@ -611,7 +611,7 @@ struct BatFiPopoverView: View {
                                 .foregroundColor(Color(NSColor.systemRed).opacity(0.85))
                                 .frame(width: 18)
                             
-                            Text("Thoát TulieBattery")
+                            Text("Thoát BatFlow")
                                 .font(.system(size: 12, weight: .medium))
                                 .foregroundColor(colorValue)
                             
@@ -915,7 +915,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             backing: .buffered,
             defer: false
         )
-        win.title = "Giới thiệu TulieBattery"
+        win.title = "Giới thiệu BatFlow"
         win.center()
         win.isReleasedWhenClosed = false
         win.contentView = NSHostingView(rootView: AboutView())
@@ -929,7 +929,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         if let bundleURL = Bundle.main.url(forResource: "generate_report", withExtension: "py") {
             return bundleURL
         }
-        let codeURL = URL(fileURLWithPath: "/Users/tungnguyen/Code/TulieBattery/src/generate_report.py")
+        let codeURL = URL(fileURLWithPath: "/Users/tungnguyen/Code/BatFlow/src/generate_report.py")
         if FileManager.default.fileExists(atPath: codeURL.path) {
             return codeURL
         }
@@ -938,9 +938,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     static var reportHTMLURL: URL {
         let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
-        let tulieDir = appSupport.appendingPathComponent("TulieBattery")
-        try? FileManager.default.createDirectory(at: tulieDir, withIntermediateDirectories: true)
-        return tulieDir.appendingPathComponent("battery_report.html")
+        let batflowDir = appSupport.appendingPathComponent("BatFlow")
+        try? FileManager.default.createDirectory(at: batflowDir, withIntermediateDirectories: true)
+        return batflowDir.appendingPathComponent("battery_report.html")
     }
 
     static var pythonExecutableURL: URL {
@@ -975,7 +975,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             backing: .buffered,
             defer: false
         )
-        win.title = "TulieBattery • Báo Cáo Phân Tích Pin & Hệ Thống"
+        win.title = "BatFlow • Báo Cáo Phân Tích Dòng Điện & Pin"
         win.center()
         win.isReleasedWhenClosed = false
         win.minSize = NSSize(width: 720, height: 500)

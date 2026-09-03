@@ -526,7 +526,7 @@ def generate_html(data):
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>TulieBattery • Phân Tích Pin & Hệ Thống</title>
+    <title>BatFlow • Phân Tích Dòng Chảy Năng Lượng & Pin</title>
     <link rel="icon" type="image/png" href="data:image/png;base64,{icon_b64}">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -1466,7 +1466,7 @@ def main():
     if len(sys.argv) > 1 and sys.argv[1]:
         report_path = sys.argv[1]
     else:
-        app_support = os.path.expanduser('~/Library/Application Support/TulieBattery')
+        app_support = os.path.expanduser('~/Library/Application Support/BatFlow')
         os.makedirs(app_support, exist_ok=True)
         report_path = os.path.join(app_support, 'battery_report.html')
     

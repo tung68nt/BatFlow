@@ -3,12 +3,12 @@ set -e
 
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 VERSION="${1:-1.0.0}"
-APP_PATH="/Applications/TulieBattery.app"
-STAGING_DIR="/tmp/TulieBattery_DMG_Staging"
-OUTPUT_DMG="$DIR/releases/TulieBattery-v$VERSION.dmg"
-DESKTOP_DMG="/Users/tungnguyen/Desktop/TulieBattery-v$VERSION.dmg"
+APP_PATH="/Applications/BatFlow.app"
+STAGING_DIR="/tmp/BatFlow_DMG_Staging"
+OUTPUT_DMG="$DIR/releases/BatFlow-v$VERSION.dmg"
+DESKTOP_DMG="/Users/tungnguyen/Desktop/BatFlow-v$VERSION.dmg"
 
-echo "📦 Creating DMG Installer for TulieBattery v$VERSION..."
+echo "📦 Creating DMG Installer for BatFlow v$VERSION..."
 
 # First run build to ensure the app is fresh
 "$DIR/scripts/build.sh"
@@ -28,7 +28,7 @@ rm -f "$OUTPUT_DMG" "$DESKTOP_DMG"
 mkdir -p "$DIR/releases"
 
 # Create Compressed Disk Image
-hdiutil create -volname "TulieBattery" \
+hdiutil create -volname "BatFlow" \
                -srcfolder "$STAGING_DIR" \
                -ov \
                -format UDZO \
@@ -38,6 +38,6 @@ hdiutil create -volname "TulieBattery" \
 cp "$OUTPUT_DMG" "$DESKTOP_DMG"
 rm -rf "$STAGING_DIR"
 
-echo "🎉 Successfully created DMG installer:"
+echo "🎉 Successfully created BatFlow DMG installer:"
 echo "   👉 $OUTPUT_DMG"
 echo "   👉 $DESKTOP_DMG"

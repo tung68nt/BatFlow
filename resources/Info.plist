@@ -3,15 +3,15 @@
 <plist version="1.0">
 <dict>
 	<key>CFBundleDisplayName</key>
-	<string>TulieBattery</string>
+	<string>BatFlow</string>
 	<key>CFBundleExecutable</key>
-	<string>TulieBattery</string>
+	<string>BatFlow</string>
 	<key>CFBundleIconFile</key>
 	<string>applet.icns</string>
 	<key>CFBundleIdentifier</key>
-	<string>com.tulietech.tuliebattery</string>
+	<string>com.tulietech.batflow</string>
 	<key>CFBundleName</key>
-	<string>TulieBattery</string>
+	<string>BatFlow</string>
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>

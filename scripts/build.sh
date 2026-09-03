@@ -2,9 +2,9 @@
 set -e
 
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-APP_PATH="/Applications/TulieBattery.app"
+APP_PATH="/Applications/BatFlow.app"
 
-echo "🔨 Building TulieBattery (Hermetic & Production Ready)..."
+echo "🔨 Building BatFlow (Hermetic & Production Ready)..."
 
 # Ensure target app bundle structure
 mkdir -p "$APP_PATH/Contents/MacOS"
@@ -21,17 +21,18 @@ swiftc -O \
     -framework SwiftUI \
     -framework AppKit \
     -framework WebKit \
-    "$DIR/src/BatteryBar.swift" \
-    -o "$APP_PATH/Contents/MacOS/TulieBattery"
+    "$DIR/src/BatFlow.swift" \
+    -o "$APP_PATH/Contents/MacOS/BatFlow"
 
 touch "$APP_PATH"
 echo "✅ Build completed successfully: $APP_PATH"
 
-# Relaunch if currently running
-if pgrep -x "TulieBattery" > /dev/null; then
-    echo "🔄 Relaunching TulieBattery..."
-    killall TulieBattery 2>/dev/null || true
-    sleep 0.5
-    open "$APP_PATH"
-    echo "🚀 TulieBattery relaunched!"
-fi
+# Terminate old TulieBattery if running
+killall TulieBattery 2>/dev/null || true
+
+# Relaunch BatFlow
+echo "🔄 Launching BatFlow..."
+killall BatFlow 2>/dev/null || true
+sleep 0.5
+open "$APP_PATH"
+echo "🚀 BatFlow launched successfully!"
