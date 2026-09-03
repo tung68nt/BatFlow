@@ -883,13 +883,11 @@ def generate_html(data):
             display: flex;
             align-items: center;
             justify-content: space-between;
-            font-size: 11px;
-            font-family: var(--font-mono);
+            font-size: 11.5px;
+            font-family: var(--font-sans);
             font-weight: 600;
-            color: var(--text-3);
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
-            padding-bottom: 4px;
+            color: var(--text-2);
+            padding-bottom: 5px;
             border-bottom: 1px solid var(--border-sub);
         }}
         .port-col-badge {{
