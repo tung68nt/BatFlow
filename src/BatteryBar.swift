@@ -924,6 +924,39 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.activate(ignoringOtherApps: true)
     }
 
+    // MARK: - Safe & Portable Path Resolvers
+    static var reportScriptURL: URL {
+        if let bundleURL = Bundle.main.url(forResource: "generate_report", withExtension: "py") {
+            return bundleURL
+        }
+        let codeURL = URL(fileURLWithPath: "/Users/tungnguyen/Code/TulieBattery/src/generate_report.py")
+        if FileManager.default.fileExists(atPath: codeURL.path) {
+            return codeURL
+        }
+        return URL(fileURLWithPath: "/Users/tungnguyen/.gemini/antigravity-ide/scratch/battery_monitor/generate_report.py")
+    }
+
+    static var reportHTMLURL: URL {
+        let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
+        let tulieDir = appSupport.appendingPathComponent("TulieBattery")
+        try? FileManager.default.createDirectory(at: tulieDir, withIntermediateDirectories: true)
+        return tulieDir.appendingPathComponent("battery_report.html")
+    }
+
+    static var pythonExecutableURL: URL {
+        let candidates = [
+            "/usr/bin/python3",
+            "/opt/homebrew/bin/python3",
+            "/usr/local/bin/python3"
+        ]
+        for c in candidates {
+            if FileManager.default.isExecutableFile(atPath: c) {
+                return URL(fileURLWithPath: c)
+            }
+        }
+        return URL(fileURLWithPath: "/usr/bin/env")
+    }
+
     var dashboardWindow: NSWindow?
     var webNavDelegate = SafeWebNavDelegate()
 
@@ -953,24 +986,38 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         webView.navigationDelegate = webNavDelegate
         webView.uiDelegate = webNavDelegate
         
-        let reportURL = URL(fileURLWithPath: "/tmp/battery_report.html")
-        webView.loadFileURL(reportURL, allowingReadAccessTo: reportURL.deletingLastPathComponent())
+        let scriptURL = AppDelegate.reportScriptURL
+        let reportURL = AppDelegate.reportHTMLURL
+        let legacyURL = URL(fileURLWithPath: "/tmp/battery_report.html")
+        let initialURL = FileManager.default.fileExists(atPath: reportURL.path) ? reportURL : legacyURL
+        
+        webView.loadFileURL(initialURL, allowingReadAccessTo: initialURL.deletingLastPathComponent())
         
         win.contentView = webView
         dashboardWindow = win
         win.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
 
-        // Refresh data and update webview in background without opening Chrome
-        DispatchQueue.global(qos: .userInitiated).async {
+        // Safe & Race-Condition-Free Process Execution (No hardcoded paths, No shell injection)
+        DispatchQueue.global(qos: .userInitiated).async { [weak webView] in
             let proc = Process()
-            proc.executableURL = URL(fileURLWithPath: "/bin/zsh")
-            proc.arguments = ["-l", "-c", "/opt/homebrew/bin/python3 /Users/tungnguyen/.gemini/antigravity-ide/scratch/battery_monitor/generate_report.py"]
-            try? proc.run()
+            let pythonURL = AppDelegate.pythonExecutableURL
             
-            DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
-                webView.reload()
+            if pythonURL.path == "/usr/bin/env" {
+                proc.executableURL = pythonURL
+                proc.arguments = ["python3", scriptURL.path, reportURL.path]
+            } else {
+                proc.executableURL = pythonURL
+                proc.arguments = [scriptURL.path, reportURL.path]
             }
+            
+            proc.terminationHandler = { [weak webView] _ in
+                DispatchQueue.main.async {
+                    webView?.loadFileURL(reportURL, allowingReadAccessTo: reportURL.deletingLastPathComponent())
+                }
+            }
+            
+            try? proc.run()
         }
     }
 }

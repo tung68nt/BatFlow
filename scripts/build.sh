@@ -4,17 +4,19 @@ set -e
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 APP_PATH="/Applications/TulieBattery.app"
 
-echo "🔨 Building TulieBattery..."
+echo "🔨 Building TulieBattery (Hermetic & Production Ready)..."
 
 # Ensure target app bundle structure
 mkdir -p "$APP_PATH/Contents/MacOS"
 mkdir -p "$APP_PATH/Contents/Resources"
 
-# Copy Metadata & Assets
+# Copy Metadata & Assets into App Bundle
 cp "$DIR/resources/Info.plist" "$APP_PATH/Contents/"
 cp "$DIR/resources/applet.icns" "$APP_PATH/Contents/Resources/"
+cp "$DIR/resources/battery_icon.png" "$APP_PATH/Contents/Resources/"
+cp "$DIR/src/generate_report.py" "$APP_PATH/Contents/Resources/"
 
-# Compile Swift Binary
+# Compile Swift Binary with optimization
 swiftc -O \
     -framework SwiftUI \
     -framework AppKit \

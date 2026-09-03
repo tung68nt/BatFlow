@@ -1,4 +1,4 @@
-import os, sys, subprocess, re, datetime, json
+import os, sys, subprocess, re, datetime, json, html as html_lib
 
 def get_battery_and_processes():
     # 1. Official Apple Battery Health from system_profiler
@@ -361,11 +361,13 @@ def generate_html(data):
     else:
         bar_color = '#ef4444'
 
-    # App table rows
+    # App table rows (with XSS sanitization)
     app_rows = ''
     for app in data['top_apps']:
         cpu = round(app['cpu'], 1)
         mem = round(app['mem'], 1)
+        safe_name = html_lib.escape(str(app.get('name', '')))
+        safe_cat = html_lib.escape(str(app.get('cat', '')))
         
         if cpu > 20 or mem > 20:
             badge_html = '<span class="status-badge badge-high">Cao</span>'
@@ -379,8 +381,8 @@ def generate_html(data):
         app_rows += f'''
         <tr>
             <td class="td-app">
-                <span class="app-title">{app['name']}</span>
-                <span class="app-type">{app['cat']}</span>
+                <span class="app-title">{safe_name}</span>
+                <span class="app-type">{safe_cat}</span>
             </td>
             <td class="td-mono">{cpu}%</td>
             <td class="td-mono">{mem}%</td>
@@ -392,7 +394,7 @@ def generate_html(data):
         </tr>
         '''
 
-    # Timeline rows
+    # Timeline rows (with XSS sanitization)
     timeline_rows = ''
     for ev in data['events']:
         dot_color = '#71717a'
@@ -403,13 +405,17 @@ def generate_html(data):
         elif ev['type'] == 'wake':
             dot_color = '#f59e0b'
 
+        safe_ev_time = html_lib.escape(str(ev.get('time', '')))
+        safe_ev_title = html_lib.escape(str(ev.get('title', '')))
+        safe_ev_detail = html_lib.escape(str(ev.get('detail', '')))
+
         timeline_rows += f'''
         <div class="tl-row">
-            <div class="tl-time">{ev['time']}</div>
+            <div class="tl-time">{safe_ev_time}</div>
             <div class="tl-indicator"><span class="tl-dot" style="background: {dot_color};"></span></div>
             <div class="tl-content">
-                <span class="tl-title">{ev['title']}</span>
-                <span class="tl-detail">{ev['detail']}</span>
+                <span class="tl-title">{safe_ev_title}</span>
+                <span class="tl-detail">{safe_ev_detail}</span>
             </div>
         </div>
         '''
@@ -1457,9 +1463,22 @@ def main():
     data = get_battery_and_processes()
     html_content = generate_html(data)
     
-    report_path = '/tmp/battery_report.html'
+    if len(sys.argv) > 1 and sys.argv[1]:
+        report_path = sys.argv[1]
+    else:
+        app_support = os.path.expanduser('~/Library/Application Support/TulieBattery')
+        os.makedirs(app_support, exist_ok=True)
+        report_path = os.path.join(app_support, 'battery_report.html')
+    
+    os.makedirs(os.path.dirname(report_path), exist_ok=True)
     with open(report_path, 'w', encoding='utf-8') as f:
         f.write(html_content)
+
+    try:
+        with open('/tmp/battery_report.html', 'w', encoding='utf-8') as f:
+            f.write(html_content)
+    except:
+        pass
 
 if __name__ == '__main__':
     main()
