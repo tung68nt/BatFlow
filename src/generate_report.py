@@ -353,22 +353,28 @@ def make_dynamic_battery_svg(pct, is_charging=False, size=58):
     return svg
 
 def generate_html(data):
-    p = data['percent']
-    if p > 50:
-        bar_color = '#22c55e'
-    elif p > 20:
-        bar_color = '#f59e0b'
+    # Determine Status Capsule styling & icon
+    if data['charging_now']:
+        status_theme_class = "capsule-charging"
+        status_icon = '<svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>'
+        eta_title = "đầy pin"
+    elif data['ac_online']:
+        status_theme_class = "capsule-hold"
+        status_icon = '<svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16" rx="1.5"/><rect x="14" y="4" width="4" height="16" rx="1.5"/></svg>'
+        eta_title = "trạng thái"
     else:
-        bar_color = '#ef4444'
+        status_theme_class = "capsule-discharging"
+        status_icon = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="2" y="6" width="18" height="12" rx="3"/><path d="M22 10v4"/></svg>'
+        eta_title = "còn lại"
 
-    # App table rows (with XSS sanitization)
+    # App table rows with Apple style avatar badge & clean pill
     app_rows = ''
     for app in data['top_apps']:
-        cpu = round(app['cpu'], 1)
-        mem = round(app['mem'], 1)
+        cpu = round(app.get('cpu', 0), 1)
+        mem = round(app.get('mem', 0), 1)
         safe_name = html_lib.escape(str(app.get('name', '')))
         safe_cat = html_lib.escape(str(app.get('cat', '')))
-        
+
         if cpu > 20 or mem > 20:
             badge_html = '<span class="status-badge badge-high">Cao</span>'
         elif cpu > 5 or mem > 5:
@@ -377,39 +383,43 @@ def generate_html(data):
             badge_html = '<span class="status-badge badge-low">Thấp</span>'
 
         load_w = min(100, max(4, int(cpu * 1.4 + mem * 1.2)))
+        initial_letter = safe_name[:1].upper() if safe_name else "A"
 
-        app_rows += f'''
+        app_rows += f"""
         <tr>
             <td class="td-app">
-                <span class="app-title">{safe_name}</span>
-                <span class="app-type">{safe_cat}</span>
+                <div class="app-icon-badge">{initial_letter}</div>
+                <div class="app-meta">
+                    <span class="app-title">{safe_name}</span>
+                    <span class="app-type">{safe_cat}</span>
+                </div>
             </td>
             <td class="td-mono">{cpu}%</td>
             <td class="td-mono">{mem}%</td>
-            <td class="td-mono td-proc">{app['count']}</td>
+            <td class="td-mono td-proc">{app.get('count', 1)}</td>
             <td class="td-status">{badge_html}</td>
             <td class="td-meter">
                 <div class="meter-track"><div class="meter-fill" style="width: {load_w}%;"></div></div>
             </td>
         </tr>
-        '''
+        """
 
-    # Timeline rows (with XSS sanitization)
+    # Timeline rows
     timeline_rows = ''
     for ev in data['events']:
-        dot_color = '#71717a'
-        if ev['type'] == 'on':
-            dot_color = '#22c55e'
-        elif ev['type'] == 'sleep':
-            dot_color = '#a855f7'
-        elif ev['type'] == 'wake':
-            dot_color = '#f59e0b'
+        dot_color = '#8e8e93'
+        if ev.get('type') == 'on':
+            dot_color = '#34C759'
+        elif ev.get('type') == 'sleep':
+            dot_color = '#AF52DE'
+        elif ev.get('type') == 'wake':
+            dot_color = '#FF9500'
 
         safe_ev_time = html_lib.escape(str(ev.get('time', '')))
         safe_ev_title = html_lib.escape(str(ev.get('title', '')))
         safe_ev_detail = html_lib.escape(str(ev.get('detail', '')))
 
-        timeline_rows += f'''
+        timeline_rows += f"""
         <div class="tl-row">
             <div class="tl-time">{safe_ev_time}</div>
             <div class="tl-indicator"><span class="tl-dot" style="background: {dot_color};"></span></div>
@@ -418,12 +428,12 @@ def generate_html(data):
                 <span class="tl-detail">{safe_ev_detail}</span>
             </div>
         </div>
-        '''
+        """
 
     # Dynamic Battery Icon (scales from Green 100% down to Red <20%)
-    dynamic_battery_svg = make_dynamic_battery_svg(data['percent'], data['charging_now'], size=58)
+    dynamic_battery_svg = make_dynamic_battery_svg(data['percent'], data['charging_now'], size=54)
 
-    # Power Delivery / Flow Widget Logic
+    # Power Delivery / Flow Logic
     if data['ac_online']:
         sys_w = data['sys_load_w']
         bat_w = data['bat_net_watts']
@@ -432,50 +442,71 @@ def generate_html(data):
         if bat_w >= 0:
             bat_flow_label = f"+{bat_w} W"
             bat_flow_desc = "Đang nạp vào pin (Dương)"
-            bat_flow_color = "#22c55e"
+            bat_flow_color = "#34C759"
             alert_box = ""
         else:
             bat_flow_label = f"{bat_w} W"
             bat_flow_desc = "Pin đang xả bù (Thâm hụt)"
-            bat_flow_color = "#ef4444"
-            alert_box = f'''
+            bat_flow_color = "#FF3B30"
+            alert_box = f"""
             <div class="power-warning">
-                <b>Cảnh báo thâm hụt:</b> Củ sạc không đủ cấp cho công suất máy ({sys_w}W). Pin đang phải gánh thêm {abs(bat_w)}W. 
-                Hãy giảm độ sáng màn hình xuống dưới 50% hoặc tắt bớt ứng dụng nặng để dòng nạp vào pin dương trở lại.
+                <b>Cảnh báo thâm hụt:</b> Củ sạc không đủ cấp cho công suất máy ({sys_w}W). Pin đang phải bù thêm {abs(bat_w)}W. 
+                Hãy giảm độ sáng màn hình hoặc đóng bớt ứng dụng nặng để dòng sạc dương trở lại.
             </div>
-            '''
+            """
 
         total_bar = max(adapter_w, sys_w + max(0, bat_w))
         sys_pct = min(100, int((sys_w / total_bar) * 100)) if total_bar > 0 else 50
         bat_pct = min(100 - sys_pct, int((max(0, bat_w) / total_bar) * 100)) if total_bar > 0 else 50
 
-        power_flow_html = f'''
-        <div class="port-active-bar">
-            <div class="port-pulse-dot"></div>
-            <span>Đang cắm qua: <b>{data['active_port_name']}</b> • Nguồn cấp: <b>{adapter_w}W</b></span>
+        power_flow_html = f"""
+        <div class="active-connection-card">
+            <div class="conn-icon-wrap">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+            </div>
+            <div class="conn-text">
+                <span class="conn-title">Đang tiếp nhận nguồn: <b>{data.get('active_port_name', 'Cổng sạc Type-C')}</b></span>
+                <span class="conn-spec">Chuẩn giao thức USB-Power Delivery • Công suất cấp <b>{adapter_w} W</b></span>
+            </div>
+            <div class="conn-badge">
+                <span class="pulse-dot"></span>
+                <span>Đang kết nối</span>
+            </div>
         </div>
 
         <div class="flow-grid">
             <div class="flow-card">
                 <span class="fl-label">Công suất củ sạc</span>
-                <span class="fl-val">{adapter_w} W</span>
-                <span class="fl-sub">Đầu vào từ củ sạc</span>
+                <div class="fl-val-row">
+                    <span class="fl-val">{adapter_w}</span>
+                    <span class="fl-unit">W</span>
+                </div>
+                <span class="fl-sub">Nguồn cấp từ adapter</span>
             </div>
             <div class="flow-card">
                 <span class="fl-label">Máy đang tiêu thụ</span>
-                <span class="fl-val">{sys_w} W</span>
-                <span class="fl-sub">Phần cứng máy sử dụng</span>
+                <div class="fl-val-row">
+                    <span class="fl-val">{sys_w}</span>
+                    <span class="fl-unit">W</span>
+                </div>
+                <span class="fl-sub">Tải phần cứng hệ thống</span>
             </div>
             <div class="flow-card">
                 <span class="fl-label">Dòng nạp vào pin</span>
-                <span class="fl-val" style="color: {bat_flow_color};">{bat_flow_label}</span>
+                <div class="fl-val-row">
+                    <span class="fl-val" style="color: {bat_flow_color};">{bat_flow_label}</span>
+                </div>
                 <span class="fl-sub">{bat_flow_desc}</span>
             </div>
         </div>
 
         <div class="flow-meter-container">
             <div class="flow-meter-header">
-                <span>Phân bổ điện năng: Máy dùng {sys_w}W ({sys_pct}%) • Nạp pin {max(0, bat_w)}W ({bat_pct}%)</span>
+                <span>Phân bổ điện năng thời gian thực</span>
+                <div class="flow-meter-legend">
+                    <span class="leg-item"><span class="leg-dot dot-sys"></span>Máy dùng {sys_w}W ({sys_pct}%)</span>
+                    <span class="leg-item"><span class="leg-dot dot-bat"></span>Nạp pin {max(0, bat_w)}W ({bat_pct}%)</span>
+                </div>
             </div>
             <div class="flow-meter-bar">
                 <div class="flow-seg-sys" style="width: {sys_pct}%;"></div>
@@ -483,79 +514,113 @@ def generate_html(data):
             </div>
         </div>
         {alert_box}
-        '''
+        """
     else:
         sys_w = data['sys_load_w']
-        power_flow_html = f'''
-        <div class="port-active-bar">
-            <div class="port-idle-dot"></div>
-            <span>Nguồn cấp: <b>Đang chạy 100% pin</b> • Không có cổng sạc nào đang kết nối</span>
+        power_flow_html = f"""
+        <div class="active-connection-card conn-idle">
+            <div class="conn-icon-wrap idle">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="6" width="18" height="12" rx="3"/><path d="M22 10v4"/></svg>
+            </div>
+            <div class="conn-text">
+                <span class="conn-title">Nguồn cấp: <b>Đang sử dụng pin tích hợp</b></span>
+                <span class="conn-spec">Chưa cắm sạc ngoài • Thiết bị đang xả pin thuần túy</span>
+            </div>
+            <div class="conn-badge badge-idle">
+                <span>Dùng pin</span>
+            </div>
         </div>
 
         <div class="flow-grid">
             <div class="flow-card">
                 <span class="fl-label">Trạng thái nguồn</span>
-                <span class="fl-val" style="color: #f59e0b;">Chưa cắm sạc</span>
-                <span class="fl-sub">Dùng 100% pin</span>
+                <div class="fl-val-row">
+                    <span class="fl-val" style="color: #FF9500;">Dùng Pin</span>
+                </div>
+                <span class="fl-sub">Không có củ sạc kết nối</span>
             </div>
             <div class="flow-card">
                 <span class="fl-label">Máy đang tiêu thụ</span>
-                <span class="fl-val">{sys_w} W</span>
-                <span class="fl-sub">Công suất xả toàn máy</span>
+                <div class="fl-val-row">
+                    <span class="fl-val">{sys_w}</span>
+                    <span class="fl-unit">W</span>
+                </div>
+                <span class="fl-sub">Tải phần cứng hệ thống</span>
             </div>
             <div class="flow-card">
-                <span class="fl-label">Ước tính với củ 20W</span>
-                <span class="fl-val" style="color: #22c55e;">+{round(max(0, 20.0 - sys_w), 1)} W</span>
-                <span class="fl-sub">Thặng dư sạc vào pin</span>
+                <span class="fl-label">Dòng xả từ pin</span>
+                <div class="fl-val-row">
+                    <span class="fl-val" style="color: #FF9500;">{data['bat_net_watts']}</span>
+                    <span class="fl-unit">W</span>
+                </div>
+                <span class="fl-sub">Xả năng lượng thực tế</span>
             </div>
         </div>
-        <div class="power-tip">
-            <b>Mẹo sạc khi dùng củ 20W iPhone:</b> Màn hình Mini-LED 14" ở mức 100% sáng ngốn tới 6 - 8W. Giảm độ sáng xuống 40 - 50%, máy chỉ còn ăn ~4W $\rightarrow$ Dành tới <b>16W</b> sạc thẳng vào pin!
-        </div>
-        '''
+        """
 
-    icon_path = '/Users/tungnguyen/.gemini/antigravity-ide/scratch/battery_monitor/battery_icon.png'
-    icon_b64 = ''
+    # Check port connection status
+    port_name = data.get('active_port_name', '')
+    is_left_active = "Trái" in port_name or "USB-C" in port_name or "MagSafe" in port_name
+    is_right_active = "Phải" in port_name
+
+    active_tag_left = '<span class="port-chip-badge">● Đang sạc 65W</span>' if is_left_active else ''
+    active_class_left = 'port-chip-active' if is_left_active else ''
+    active_class_right = 'port-chip-active' if is_right_active else ''
+
+    # Read base64 icon safely
+    icon_b64 = ""
+    icon_path = os.path.join(os.path.dirname(__file__), '..', 'resources', 'battery_icon.png')
+    if not os.path.exists(icon_path):
+        icon_path = os.path.expanduser('~/Code/BatFlow/resources/battery_icon.png')
     if os.path.exists(icon_path):
         import base64
         with open(icon_path, 'rb') as f:
             icon_b64 = base64.b64encode(f.read()).decode('utf-8')
 
-    html = f'''<!DOCTYPE html>
+    html_out = f"""<!DOCTYPE html>
 <html lang="vi">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>BatFlow • Phân Tích Dòng Chảy Năng Lượng & Pin</title>
+    <title>BatFlow • Báo Cáo Phân Tích Dòng Điện & Pin</title>
     <link rel="icon" type="image/png" href="data:image/png;base64,{icon_b64}">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <style>
         :root {{
-            --bg: #f6f6f8;
-            --surface: #ffffff;
-            --surface-sub: #f0f0f3;
-            --border: #e2e2e7;
-            --border-sub: #eaebee;
-            --text-1: #1d1d1f;
-            --text-2: #515156;
-            --text-3: #86868b;
-            --card-shadow: 0 4px 18px rgba(0, 0, 0, 0.04);
+            --bg: #F5F5F7;
+            --surface: #FFFFFF;
+            --surface-sub: #FBFBFD;
+            --surface-elevated: #FFFFFF;
+            --border: rgba(0, 0, 0, 0.08);
+            --border-sub: rgba(0, 0, 0, 0.04);
+            --text-1: #1D1D1F;
+            --text-2: #48484A;
+            --text-3: #86868B;
+            --card-shadow: 0 4px 20px rgba(0, 0, 0, 0.03), 0 1px 3px rgba(0, 0, 0, 0.02);
+            --apple-green: #34C759;
+            --apple-blue: #0071E3;
+            --apple-orange: #FF9500;
+            --apple-red: #FF3B30;
             --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'SF Pro Text', sans-serif;
-            --font-mono: var(--font-sans);
         }}
         @media (prefers-color-scheme: dark) {{
             :root {{
-                --bg: #09090b;
-                --surface: #121215;
-                --surface-sub: #18181b;
-                --border: #27272a;
-                --border-sub: #1f1f23;
-                --text-1: #fafafa;
-                --text-2: #a1a1aa;
-                --text-3: #71717a;
-                --card-shadow: none;
+                --bg: #000000;
+                --surface: #1C1C1E;
+                --surface-sub: #2C2C2E;
+                --surface-elevated: #242426;
+                --border: rgba(255, 255, 255, 0.12);
+                --border-sub: rgba(255, 255, 255, 0.06);
+                --text-1: #F5F5F7;
+                --text-2: #A1A1A6;
+                --text-3: #636366;
+                --card-shadow: 0 4px 24px rgba(0, 0, 0, 0.4);
+                --apple-green: #30D158;
+                --apple-blue: #0A84FF;
+                --apple-orange: #FF9F0A;
+                --apple-red: #FF453A;
             }}
         }}
         * {{
@@ -569,8 +634,8 @@ def generate_html(data):
             color: var(--text-1);
             font-family: var(--font-sans);
             font-size: 13px;
-            line-height: 1.5;
-            padding: 36px 24px 48px 24px;
+            line-height: 1.45;
+            padding: 32px 28px 48px 28px;
             display: flex;
             justify-content: center;
             transition: background-color 0.2s ease, color 0.2s ease;
@@ -580,41 +645,38 @@ def generate_html(data):
             width: 100%;
         }}
 
-        /* Header (Draggable for native macOS window) */
+        /* Header (Apple Hardware Style) */
         header {{
             display: flex;
             justify-content: space-between;
             align-items: center;
-            margin-bottom: 28px;
+            margin-bottom: 24px;
             padding-bottom: 18px;
             border-bottom: 1px solid var(--border);
-            -webkit-app-region: drag;
             user-select: none;
         }}
         .header-left {{
             display: flex;
             align-items: center;
             gap: 14px;
-            white-space: nowrap;
         }}
         .brand-icon-wrap {{
-            width: 58px;
-            height: 58px;
+            width: 54px;
+            height: 54px;
             display: flex;
             align-items: center;
             justify-content: center;
             flex-shrink: 0;
-            filter: none;
             transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1);
         }}
         .brand-icon-wrap:hover {{
-            transform: scale(1.08);
+            transform: scale(1.05);
         }}
         .svg-squircle {{
             fill: #ffffff;
-            stroke: #e2e2e7;
+            stroke: var(--border);
             stroke-width: 1.5;
-            filter: drop-shadow(0 3px 10px rgba(0, 0, 0, 0.06));
+            filter: drop-shadow(0 2px 8px rgba(0, 0, 0, 0.05));
         }}
         .svg-cylinder {{
             fill: #f4f4f7;
@@ -631,144 +693,172 @@ def generate_html(data):
                 stroke: #3F3F46;
             }}
         }}
-        .brand-text-group {{
+        .device-info {{
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+        }}
+        .device-name-row {{
             display: flex;
             align-items: center;
-            gap: 12px;
+            gap: 8px;
         }}
-        .sys-tag {{
-            font-size: 12px;
-            font-family: var(--font-mono);
-            font-weight: 500;
-            color: var(--text-3);
-        }}
-        .sys-name {{
-            font-size: 15px;
+        .device-name {{
+            font-size: 16px;
             font-weight: 600;
+            letter-spacing: -0.2px;
             color: var(--text-1);
+        }}
+        .device-chip {{
+            font-size: 12.5px;
+            color: var(--text-3);
+            font-weight: 400;
         }}
         .live-pill {{
             display: inline-flex;
             align-items: center;
-            gap: 6px;
-            padding: 4px 10px;
-            background: rgba(34, 197, 94, 0.1);
-            border: 1px solid rgba(34, 197, 94, 0.25);
+            gap: 5px;
+            padding: 2.5px 8px;
+            background: rgba(52, 199, 89, 0.1);
             border-radius: 100px;
             font-size: 11px;
-            font-family: var(--font-mono);
-            color: #22c55e;
-            font-weight: 600;
+            color: var(--apple-green);
+            font-weight: 500;
+            font-variant-numeric: tabular-nums;
         }}
         .pulse-dot {{
-            width: 6px;
-            height: 6px;
+            width: 5.5px;
+            height: 5.5px;
             border-radius: 50%;
-            background: #22c55e;
-            box-shadow: 0 0 6px #22c55e;
-            animation: pulse 1.5s infinite;
+            background: var(--apple-green);
+            box-shadow: 0 0 5px var(--apple-green);
+            animation: pulse 1.6s infinite;
         }}
         @keyframes pulse {{
             0% {{ opacity: 1; transform: scale(1); }}
-            50% {{ opacity: 0.4; transform: scale(0.85); }}
+            50% {{ opacity: 0.35; transform: scale(0.85); }}
             100% {{ opacity: 1; transform: scale(1); }}
         }}
         .btn-sync {{
-            background: transparent;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            background: var(--surface);
             border: 1px solid var(--border);
             color: var(--text-2);
-            padding: 6px 14px;
-            border-radius: 6px;
+            padding: 6px 13px;
+            border-radius: 8px;
             font-size: 12px;
             font-weight: 500;
             cursor: pointer;
-            white-space: nowrap;
+            box-shadow: 0 1px 2px rgba(0, 0, 0, 0.03);
             transition: all 0.15s ease;
         }}
         .btn-sync:hover {{
             background: var(--surface-sub);
             color: var(--text-1);
-            border-color: #3f3f46;
+            border-color: rgba(0, 0, 0, 0.15);
         }}
 
-        /* Primary Status Card */
+        /* Hero Battery Card */
         .card-main {{
             background: var(--surface);
             border: 1px solid var(--border);
-            border-radius: 12px;
-            padding: 24px 28px;
+            border-radius: 20px;
+            padding: 26px 30px;
             margin-bottom: 24px;
+            box-shadow: var(--card-shadow);
         }}
         .main-top {{
             display: flex;
             justify-content: space-between;
-            align-items: baseline;
-            margin-bottom: 16px;
-            white-space: nowrap;
+            align-items: center;
+            margin-bottom: 18px;
         }}
         .pct-group {{
             display: flex;
-            align-items: baseline;
+            align-items: center;
             gap: 14px;
         }}
         .pct-number {{
-            font-size: 54px;
+            font-size: 64px;
             font-weight: 700;
-            font-family: var(--font-mono);
-            letter-spacing: -2px;
+            letter-spacing: -2.5px;
             line-height: 1;
             color: var(--text-1);
+            font-variant-numeric: tabular-nums;
         }}
-        .pct-state {{
-            display: flex;
+        .status-capsule {{
+            display: inline-flex;
             align-items: center;
-            gap: 8px;
-            font-size: 13px;
+            gap: 6px;
+            padding: 5px 12px;
+            border-radius: 20px;
+            font-size: 12.5px;
             font-weight: 500;
+        }}
+        .capsule-charging {{
+            background: rgba(52, 199, 89, 0.1);
+            color: var(--apple-green);
+        }}
+        .capsule-hold {{
+            background: rgba(0, 113, 227, 0.08);
+            color: var(--apple-blue);
+        }}
+        .capsule-discharging {{
+            background: rgba(0, 0, 0, 0.05);
             color: var(--text-2);
         }}
-        .state-dot {{
-            width: 7px;
-            height: 7px;
-            border-radius: 50%;
-            background: {data['state_color']};
+        @media (prefers-color-scheme: dark) {{
+            .capsule-discharging {{
+                background: rgba(255, 255, 255, 0.08);
+                color: var(--text-2);
+            }}
         }}
-        .eta-text {{
-            font-size: 13px;
-            font-family: var(--font-mono);
-            color: var(--text-2);
+        .eta-group {{
+            display: flex;
+            flex-direction: column;
+            align-items: flex-end;
+            gap: 1px;
         }}
-        .eta-text b {{
-            color: var(--text-1);
+        .eta-label {{
+            font-size: 11px;
+            color: var(--text-3);
+            font-weight: 500;
+        }}
+        .eta-val {{
+            font-size: 14px;
             font-weight: 600;
+            color: var(--text-1);
         }}
 
-        /* Minimalist Progress Track */
-        .battery-bar-container {{
-            margin-bottom: 24px;
-        }}
+        /* Smooth Capsule Progress Bar */
         .battery-bar-track {{
-            width: 100%;
-            height: 6px;
-            background: var(--surface-sub);
-            border-radius: 3px;
+            height: 8px;
+            background: rgba(0, 0, 0, 0.05);
+            border-radius: 100px;
+            margin-bottom: 24px;
             overflow: hidden;
-            border: 1px solid var(--border-sub);
+        }}
+        @media (prefers-color-scheme: dark) {{
+            .battery-bar-track {{
+                background: rgba(255, 255, 255, 0.08);
+            }}
         }}
         .battery-bar-fill {{
             height: 100%;
-            background: {bar_color};
-            border-radius: 3px;
-            width: {data['percent']}%;
+            background: linear-gradient(90deg, #34C759 0%, #30D158 100%);
+            border-radius: 100px;
+            transition: width 0.4s ease;
         }}
 
         /* Key Metrics Row */
         .stats-strip {{
             display: grid;
             grid-template-columns: repeat(4, 1fr);
-            gap: 16px;
+            gap: 18px;
             padding-top: 20px;
-            border-top: 1px solid var(--border);
+            border-top: 1px solid var(--border-sub);
         }}
         @media (max-width: 680px) {{
             .stats-strip {{ grid-template-columns: repeat(2, 1fr); }}
@@ -779,252 +869,343 @@ def generate_html(data):
             gap: 3px;
         }}
         .st-label {{
-            font-size: 12px;
+            font-size: 11.5px;
             color: var(--text-3);
             font-weight: 500;
-            white-space: nowrap;
         }}
         .st-val {{
-            font-size: 18px;
+            font-size: 18.5px;
             font-weight: 600;
-            font-family: var(--font-mono);
+            letter-spacing: -0.5px;
             color: var(--text-1);
-            white-space: nowrap;
+            font-variant-numeric: tabular-nums;
+        }}
+        .st-unit {{
+            font-size: 13.5px;
+            font-weight: 500;
+            color: var(--text-3);
         }}
         .st-sub {{
             font-size: 11px;
             color: var(--text-3);
-            white-space: nowrap;
         }}
 
-        /* Section Containers */
+        /* Section Layouts */
         .section-wrap {{
-            background: var(--surface);
-            border: 1px solid var(--border);
-            border-radius: 12px;
-            padding: 24px;
-            margin-bottom: 24px;
+            margin-bottom: 28px;
         }}
         .sec-head {{
             display: flex;
             justify-content: space-between;
-            align-items: center;
-            margin-bottom: 8px;
-            white-space: nowrap;
+            align-items: baseline;
+            margin-bottom: 12px;
+            padding: 0 4px;
         }}
         .sec-title {{
-            font-size: 14px;
+            font-size: 13.5px;
             font-weight: 600;
+            letter-spacing: -0.2px;
             color: var(--text-1);
         }}
         .sec-caption {{
-            font-size: 12px;
-            color: var(--text-3);
-        }}
-        .sec-explainer {{
-            font-size: 12px;
-            color: var(--text-2);
-            line-height: 1.6;
-            margin-bottom: 20px;
-            padding: 10px 14px;
-            background: var(--surface-sub);
-            border: 1px solid var(--border-sub);
-            border-radius: 8px;
-        }}
-
-        /* Port Active Status Bar */
-        .port-active-bar {{
-            display: flex;
-            align-items: center;
-            gap: 10px;
-            padding: 10px 14px;
-            background: var(--surface-sub);
-            border: 1px solid var(--border-sub);
-            border-radius: 8px;
-            margin-bottom: 16px;
-            font-size: 12px;
-            color: var(--text-2);
-        }}
-        .port-pulse-dot {{
-            width: 8px;
-            height: 8px;
-            border-radius: 50%;
-            background: #22c55e;
-            box-shadow: 0 0 8px #22c55e;
-            flex-shrink: 0;
-        }}
-        .port-idle-dot {{
-            width: 8px;
-            height: 8px;
-            border-radius: 50%;
-            background: #71717a;
-            flex-shrink: 0;
-        }}
-        .port-active-bar b {{
-            color: var(--text-1);
-        }}
-
-        /* Port Specs 2-Column Hardware Layout (Left: 3 ports, Right: 1 port) */
-        .ports-columns-layout {{
-            display: grid;
-            grid-template-columns: repeat(2, 1fr);
-            gap: 16px;
-            margin-top: 16px;
-        }}
-        @media (max-width: 680px) {{
-            .ports-columns-layout {{ grid-template-columns: 1fr; }}
-        }}
-        .port-col {{
-            display: flex;
-            flex-direction: column;
-            gap: 10px;
-        }}
-        .port-col-head {{
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
             font-size: 11.5px;
-            font-family: var(--font-sans);
-            font-weight: 600;
-            color: var(--text-2);
-            padding-bottom: 5px;
-            border-bottom: 1px solid var(--border-sub);
-        }}
-        .port-col-badge {{
-            font-size: 10px;
-            padding: 2px 6px;
-            border-radius: 4px;
-            background: var(--surface-sub);
-            color: var(--text-2);
-        }}
-        .port-box {{
-            background: var(--surface-sub);
-            border: 1px solid var(--border-sub);
-            border-radius: 8px;
-            padding: 12px 14px;
-            display: flex;
-            flex-direction: column;
-            gap: 4px;
-            transition: border-color 0.15s ease;
-        }}
-        .port-box:hover {{
-            border-color: #3f3f46;
-        }}
-        .port-box-active {{
-            border-color: #22c55e !important;
-            background: rgba(34, 197, 94, 0.05);
-        }}
-        .port-title {{
-            font-size: 12.5px;
-            font-weight: 600;
-            color: var(--text-1);
-        }}
-        .port-limits {{
-            font-size: 11px;
-            font-family: var(--font-mono);
-            color: #38bdf8;
-        }}
-        .port-desc {{
-            font-size: 11px;
             color: var(--text-3);
         }}
-        .port-note-box {{
-            background: var(--surface-sub);
-            border: 1px dashed var(--border);
-            border-radius: 8px;
-            padding: 12px 14px;
-            font-size: 11px;
-            color: var(--text-2);
-            line-height: 1.5;
+
+        /* Active Connection Card */
+        .active-connection-card {{
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 12px 16px;
+            background: rgba(52, 199, 89, 0.06);
+            border: 1px solid rgba(52, 199, 89, 0.18);
+            border-radius: 12px;
+            margin-bottom: 14px;
+        }}
+        .conn-idle {{
+            background: rgba(0, 0, 0, 0.03);
+            border-color: var(--border);
+        }}
+        @media (prefers-color-scheme: dark) {{
+            .conn-idle {{
+                background: rgba(255, 255, 255, 0.03);
+                border-color: var(--border-sub);
+            }}
+        }}
+        .conn-icon-wrap {{
+            width: 28px;
+            height: 28px;
+            border-radius: 50%;
+            background: rgba(52, 199, 89, 0.15);
+            color: var(--apple-green);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-shrink: 0;
+        }}
+        .conn-icon-wrap.idle {{
+            background: rgba(0, 0, 0, 0.06);
+            color: var(--text-3);
+        }}
+        .conn-text {{
+            display: flex;
+            flex-direction: column;
+            gap: 1px;
+            flex: 1;
+        }}
+        .conn-title {{
+            font-size: 12.5px;
+            color: var(--text-1);
+        }}
+        .conn-spec {{
+            font-size: 11.5px;
+            color: var(--text-3);
+        }}
+        .conn-badge {{
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+            font-size: 11.5px;
+            color: var(--apple-green);
+            font-weight: 500;
+        }}
+        .badge-idle {{
+            color: var(--text-3);
         }}
 
-        /* Power Flow Widget */
+        /* Power Flow 3-Cards Grid */
         .flow-grid {{
             display: grid;
             grid-template-columns: repeat(3, 1fr);
-            gap: 16px;
-            margin-bottom: 20px;
+            gap: 12px;
+            margin-bottom: 14px;
         }}
         @media (max-width: 600px) {{
             .flow-grid {{ grid-template-columns: 1fr; }}
         }}
         .flow-card {{
-            background: var(--surface-sub);
-            border: 1px solid var(--border-sub);
-            border-radius: 8px;
-            padding: 14px 16px;
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 14px;
+            padding: 16px 18px;
             display: flex;
             flex-direction: column;
-            gap: 4px;
+            gap: 3px;
+            box-shadow: var(--card-shadow);
         }}
         .fl-label {{
-            font-size: 11px;
+            font-size: 11.5px;
             color: var(--text-3);
-            white-space: nowrap;
+            font-weight: 500;
+        }}
+        .fl-val-row {{
+            display: flex;
+            align-items: baseline;
+            gap: 3px;
         }}
         .fl-val {{
-            font-size: 20px;
+            font-size: 24px;
             font-weight: 700;
-            font-family: var(--font-mono);
+            letter-spacing: -0.6px;
             color: var(--text-1);
-            white-space: nowrap;
+            font-variant-numeric: tabular-nums;
+        }}
+        .fl-unit {{
+            font-size: 14px;
+            font-weight: 500;
+            color: var(--text-3);
         }}
         .fl-sub {{
             font-size: 11px;
             color: var(--text-3);
-            white-space: nowrap;
-        }}
-        .flow-meter-container {{
-            margin-bottom: 16px;
-        }}
-        .flow-meter-header {{
-            font-size: 11px;
-            color: var(--text-2);
-            font-family: var(--font-mono);
-            margin-bottom: 8px;
-        }}
-        .flow-meter-bar {{
-            width: 100%;
-            height: 8px;
-            background: var(--surface-sub);
-            border-radius: 4px;
-            overflow: hidden;
-            display: flex;
-        }}
-        .flow-seg-sys {{
-            background: #f59e0b;
-            height: 100%;
-        }}
-        .flow-seg-bat {{
-            background: #22c55e;
-            height: 100%;
-        }}
-        .power-warning {{
-            background: rgba(239, 68, 68, 0.1);
-            border: 1px solid rgba(239, 68, 68, 0.25);
-            border-radius: 8px;
-            padding: 12px 16px;
-            font-size: 12px;
-            color: #fca5a5;
-            line-height: 1.6;
-        }}
-        .power-warning b {{
-            color: #ef4444;
-        }}
-        .power-tip {{
-            background: rgba(39, 39, 42, 0.6);
-            border: 1px solid var(--border-sub);
-            border-radius: 8px;
-            padding: 12px 16px;
-            font-size: 12px;
-            color: var(--text-2);
-            line-height: 1.6;
-        }}
-        .power-tip b {{
-            color: var(--text-1);
         }}
 
-        /* Clean Table */
+        /* Power Split Meter */
+        .flow-meter-container {{
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 14px;
+            padding: 14px 18px;
+            margin-bottom: 16px;
+            box-shadow: var(--card-shadow);
+        }}
+        .flow-meter-header {{
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 11.5px;
+            color: var(--text-3);
+            margin-bottom: 8px;
+        }}
+        .flow-meter-legend {{
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }}
+        .leg-item {{
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+        }}
+        .leg-dot {{
+            width: 6px;
+            height: 6px;
+            border-radius: 50%;
+        }}
+        .dot-sys {{ background: var(--apple-blue); }}
+        .dot-bat {{ background: var(--apple-green); }}
+
+        .flow-meter-bar {{
+            height: 7px;
+            background: rgba(0, 0, 0, 0.05);
+            border-radius: 100px;
+            display: flex;
+            overflow: hidden;
+            gap: 2px;
+        }}
+        @media (prefers-color-scheme: dark) {{
+            .flow-meter-bar {{ background: rgba(255, 255, 255, 0.08); }}
+        }}
+        .flow-seg-sys {{
+            background: var(--apple-blue);
+            height: 100%;
+            border-radius: 100px 0 0 100px;
+        }}
+        .flow-seg-bat {{
+            background: var(--apple-green);
+            height: 100%;
+            border-radius: 0 100px 100px 0;
+        }}
+        .power-warning {{
+            background: rgba(255, 59, 48, 0.08);
+            border: 1px solid rgba(255, 59, 48, 0.2);
+            border-radius: 12px;
+            padding: 12px 16px;
+            color: var(--apple-red);
+            font-size: 12px;
+            line-height: 1.45;
+            margin-bottom: 16px;
+        }}
+
+        /* Visual Hardware Port Schematic (Apple Chassis Aesthetic) */
+        .hardware-schematic {{
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 16px;
+        }}
+        @media (max-width: 680px) {{
+            .hardware-schematic {{ grid-template-columns: 1fr; }}
+        }}
+        .chassis-panel {{
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            padding: 18px 20px;
+            box-shadow: var(--card-shadow);
+        }}
+        .chassis-header {{
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding-bottom: 12px;
+            margin-bottom: 12px;
+            border-bottom: 1px solid var(--border-sub);
+        }}
+        .chassis-title {{
+            font-size: 12.5px;
+            font-weight: 600;
+            color: var(--text-1);
+        }}
+        .chassis-badge {{
+            font-size: 11px;
+            padding: 2px 7px;
+            border-radius: 100px;
+            background: var(--surface-sub);
+            color: var(--text-3);
+            font-weight: 500;
+        }}
+        .port-list {{
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }}
+        .port-chip {{
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 10px 12px;
+            border-radius: 10px;
+            background: var(--surface-sub);
+            border: 1px solid var(--border-sub);
+            transition: all 0.15s ease;
+        }}
+        .port-chip:hover {{
+            background: rgba(0, 0, 0, 0.03);
+            border-color: rgba(0, 0, 0, 0.1);
+        }}
+        @media (prefers-color-scheme: dark) {{
+            .port-chip:hover {{
+                background: rgba(255, 255, 255, 0.04);
+                border-color: rgba(255, 255, 255, 0.1);
+            }}
+        }}
+        .port-chip-active {{
+            background: rgba(52, 199, 89, 0.06) !important;
+            border-color: var(--apple-green) !important;
+        }}
+        .port-symbol {{
+            width: 30px;
+            height: 30px;
+            border-radius: 8px;
+            background: var(--surface);
+            border: 1px solid var(--border-sub);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-shrink: 0;
+            color: var(--text-2);
+        }}
+        .port-chip-active .port-symbol {{
+            background: var(--apple-green);
+            color: #ffffff;
+            border-color: transparent;
+            box-shadow: 0 0 10px rgba(52, 199, 89, 0.4);
+        }}
+        .port-chip-info {{
+            display: flex;
+            flex-direction: column;
+            gap: 1px;
+            flex: 1;
+        }}
+        .port-chip-title-row {{
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }}
+        .port-chip-name {{
+            font-size: 12px;
+            font-weight: 600;
+            color: var(--text-1);
+        }}
+        .port-chip-badge {{
+            font-size: 10px;
+            font-weight: 500;
+            color: var(--apple-green);
+        }}
+        .port-chip-spec {{
+            font-size: 11px;
+            color: var(--text-3);
+        }}
+
+        /* App Table */
+        .table-card {{
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            overflow: hidden;
+            box-shadow: var(--card-shadow);
+        }}
         .app-table {{
             width: 100%;
             border-collapse: collapse;
@@ -1032,162 +1213,173 @@ def generate_html(data):
         }}
         .app-table th {{
             text-align: left;
-            padding: 8px 12px;
+            padding: 10px 14px;
             font-size: 11px;
             color: var(--text-3);
             border-bottom: 1px solid var(--border);
             font-weight: 500;
-            white-space: nowrap;
+            background: var(--surface-sub);
         }}
         .app-table td {{
-            padding: 11px 12px;
+            padding: 10px 14px;
             border-bottom: 1px solid var(--border-sub);
             vertical-align: middle;
-            white-space: nowrap;
         }}
         .app-table tr:last-child td {{
             border-bottom: none;
         }}
+        .app-table tr:hover td {{
+            background: rgba(0, 0, 0, 0.015);
+        }}
         .td-app {{
-            width: 38%;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            width: 36%;
+        }}
+        .app-icon-badge {{
+            width: 24px;
+            height: 24px;
+            border-radius: 6px;
+            background: var(--surface-sub);
+            border: 1px solid var(--border-sub);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 10.5px;
+            font-weight: 600;
+            color: var(--text-2);
+            flex-shrink: 0;
+        }}
+        .app-meta {{
+            display: flex;
+            flex-direction: column;
+            gap: 0;
+            overflow: hidden;
         }}
         .app-title {{
             font-weight: 600;
             color: var(--text-1);
-            display: block;
+            text-overflow: ellipsis;
+            overflow: hidden;
             white-space: nowrap;
         }}
         .app-type {{
-            font-size: 11px;
+            font-size: 10.5px;
             color: var(--text-3);
-            white-space: nowrap;
         }}
         .td-mono {{
-            font-family: var(--font-mono);
             color: var(--text-2);
             text-align: right;
-            width: 12%;
+            font-variant-numeric: tabular-nums;
         }}
         .td-proc {{
             color: var(--text-3);
         }}
         .td-status {{
-            width: 14%;
             text-align: center;
+            width: 60px;
+        }}
+        .status-badge {{
+            display: inline-block;
+            padding: 2px 7px;
+            border-radius: 5px;
+            font-size: 10.5px;
+            font-weight: 500;
+        }}
+        .badge-low {{
+            background: rgba(52, 199, 89, 0.12);
+            color: #248a3d;
+        }}
+        .badge-mid {{
+            background: rgba(255, 149, 0, 0.12);
+            color: #c96d00;
+        }}
+        .badge-high {{
+            background: rgba(255, 59, 48, 0.12);
+            color: #d70015;
+        }}
+        @media (prefers-color-scheme: dark) {{
+            .badge-low {{ color: #30D158; }}
+            .badge-mid {{ color: #FF9F0A; }}
+            .badge-high {{ color: #FF453A; }}
         }}
         .td-meter {{
-            width: 24%;
-            padding-right: 0 !important;
+            width: 90px;
         }}
         .meter-track {{
-            height: 4px;
-            background: var(--surface-sub);
-            border-radius: 2px;
-            overflow: hidden;
             width: 100%;
+            height: 4px;
+            background: rgba(0, 0, 0, 0.05);
+            border-radius: 100px;
+            overflow: hidden;
+        }}
+        @media (prefers-color-scheme: dark) {{
+            .meter-track {{ background: rgba(255, 255, 255, 0.08); }}
         }}
         .meter-fill {{
             height: 100%;
-            background: var(--text-2);
-            border-radius: 2px;
+            background: var(--apple-green);
+            border-radius: 100px;
         }}
 
-        /* Status Badges */
-        .status-badge {{
-            display: inline-block;
-            font-size: 11px;
-            font-weight: 600;
-            padding: 2px 8px;
-            border-radius: 4px;
-            white-space: nowrap;
-        }}
-        .badge-high {{ background: rgba(239, 68, 68, 0.12); color: #dc2626; border: 1px solid rgba(239, 68, 68, 0.25); }}
-        .badge-mid {{ background: rgba(245, 158, 11, 0.12); color: #d97706; border: 1px solid rgba(245, 158, 11, 0.25); }}
-        .badge-low {{ background: rgba(16, 185, 129, 0.12); color: #059669; border: 1px solid rgba(16, 185, 129, 0.25); }}
-
-        /* Specs Grid - No word wrap, side-by-side comparison */
-        .specs-grid {{
-            display: grid;
-            grid-template-columns: repeat(4, 1fr);
-            gap: 20px 24px;
-        }}
-        @media (max-width: 768px) {{
-            .specs-grid {{ grid-template-columns: repeat(2, 1fr); }}
-        }}
-        .spec-item {{
-            display: flex;
-            flex-direction: column;
-            gap: 4px;
-        }}
-        .sp-key {{
-            font-size: 12px;
-            color: var(--text-3);
-            white-space: nowrap;
-            overflow: hidden;
-            text-overflow: ellipsis;
-        }}
-        .sp-val {{
-            font-size: 14px;
-            font-family: var(--font-mono);
-            font-weight: 600;
-            color: var(--text-1);
-            white-space: nowrap;
-        }}
-        .sp-formula {{
-            font-size: 11px;
-            font-family: var(--font-mono);
-            color: #38bdf8;
-            white-space: nowrap;
-        }}
-        .sp-note {{
-            font-size: 11px;
-            color: var(--text-3);
-            white-space: nowrap;
-        }}
-
-        /* Timeline Table */
-        .tl-container {{
-            display: flex;
-            flex-direction: column;
+        /* Timeline Card */
+        .timeline-card {{
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            padding: 18px 22px;
+            box-shadow: var(--card-shadow);
         }}
         .tl-row {{
             display: flex;
-            align-items: center;
-            gap: 16px;
-            padding: 9px 0;
-            border-bottom: 1px solid var(--border-sub);
-            white-space: nowrap;
+            align-items: flex-start;
+            gap: 14px;
+            position: relative;
+            padding-bottom: 12px;
         }}
         .tl-row:last-child {{
-            border-bottom: none;
+            padding-bottom: 0;
+        }}
+        .tl-row:not(:last-child)::after {{
+            content: '';
+            position: absolute;
+            left: 69px;
+            top: 13px;
+            bottom: -2px;
+            width: 1px;
+            background: var(--border-sub);
         }}
         .tl-time {{
             font-size: 11px;
-            font-family: var(--font-mono);
             color: var(--text-3);
-            min-width: 65px;
+            width: 58px;
+            text-align: right;
+            padding-top: 1px;
+            font-variant-numeric: tabular-nums;
         }}
         .tl-indicator {{
+            width: 15px;
             display: flex;
-            align-items: center;
             justify-content: center;
+            padding-top: 4px;
+            z-index: 1;
         }}
         .tl-dot {{
-            width: 6px;
-            height: 6px;
+            width: 6.5px;
+            height: 6.5px;
             border-radius: 50%;
         }}
         .tl-content {{
             display: flex;
-            align-items: baseline;
-            gap: 12px;
+            flex-direction: column;
+            gap: 1px;
             flex: 1;
         }}
         .tl-title {{
             font-size: 12px;
-            font-weight: 500;
+            font-weight: 600;
             color: var(--text-1);
-            min-width: 160px;
         }}
         .tl-detail {{
             font-size: 11px;
@@ -1196,13 +1388,20 @@ def generate_html(data):
 
         /* Footer */
         footer {{
+            margin-top: 32px;
             display: flex;
             justify-content: space-between;
+            align-items: center;
             font-size: 11px;
             color: var(--text-3);
-            font-family: var(--font-mono);
-            padding-top: 8px;
-            white-space: nowrap;
+            border-top: 1px solid var(--border-sub);
+            padding-top: 14px;
+        }}
+        .footer-brand {{
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+            font-weight: 500;
         }}
     </style>
 </head>
@@ -1213,16 +1412,21 @@ def generate_html(data):
                 <div class="brand-icon-wrap">
                     {dynamic_battery_svg}
                 </div>
-                <div class="brand-text-group">
-                    <span class="sys-tag">MacBook Pro 14"</span>
-                    <span class="sys-name">Apple M1 Pro • 16 GB</span>
-                </div>
-                <div class="live-pill">
-                    <span class="pulse-dot"></span>
-                    <span id="live-clock">{data['generated_at']}</span>
+                <div class="device-info">
+                    <div class="device-name-row">
+                        <span class="device-name">MacBook Pro 14″</span>
+                        <span class="live-pill">
+                            <span class="pulse-dot"></span>
+                            <span id="live-clock">{data['generated_at']}</span>
+                        </span>
+                    </div>
+                    <span class="device-chip">Apple M1 Pro • Bộ nhớ 16 GB</span>
                 </div>
             </div>
-            <button class="btn-sync" onclick="location.reload()">Cập nhật ↻</button>
+            <button class="btn-sync" onclick="location.reload()">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/></svg>
+                Làm mới
+            </button>
         </header>
 
         <!-- Primary Status Card -->
@@ -1230,18 +1434,19 @@ def generate_html(data):
             <div class="main-top">
                 <div class="pct-group">
                     <span class="pct-number">{data['percent']}%</span>
-                    <div class="pct-state">
-                        <span class="state-dot"></span>
+                    <div class="status-capsule {status_theme_class}">
+                        {status_icon}
                         <span>{data['state_str']}</span>
                     </div>
                 </div>
-                <div class="eta-text">Dự kiến còn: <b>{data['time_remaining']}</b></div>
+                <div class="eta-group">
+                    <span class="eta-label">Dự kiến {eta_title}</span>
+                    <span class="eta-val">{data['time_remaining']}</span>
+                </div>
             </div>
 
-            <div class="battery-bar-container">
-                <div class="battery-bar-track">
-                    <div class="battery-bar-fill"></div>
-                </div>
+            <div class="battery-bar-track">
+                <div class="battery-bar-fill" style="width: {data['percent']}%;"></div>
             </div>
 
             <div class="stats-strip">
@@ -1257,8 +1462,8 @@ def generate_html(data):
                 </div>
                 <div class="stat-item">
                     <span class="st-label">Công suất máy dùng</span>
-                    <span class="st-val">{data['sys_load_w']} W</span>
-                    <span class="st-sub">{data['voltage']}V • {abs(data['amperage'])}mA</span>
+                    <span class="st-val">{data['sys_load_w']} <span class="st-unit">W</span></span>
+                    <span class="st-sub">{data['voltage']} V • {abs(data['amperage'])} mA</span>
                 </div>
                 <div class="stat-item">
                     <span class="st-label">Sức khỏe pin (Apple)</span>
@@ -1271,56 +1476,114 @@ def generate_html(data):
         <!-- Section 2: Realtime Power Flow & Charging Delivery -->
         <div class="section-wrap">
             <div class="sec-head">
-                <span class="sec-title">Phân bổ điện năng & nguồn sạc thời gian thực</span>
-                <span class="sec-caption">Đo dòng điện vào pin và tải phần cứng</span>
+                <span class="sec-title">Phân bổ điện năng & nguồn sạc</span>
+                <span class="sec-caption">Giám sát dòng nạp sạc và công suất máy dùng</span>
             </div>
 
             {power_flow_html}
 
-            <!-- Port Capabilities: Exact Physical Layout (From Hinge to Front) -->
-            <div class="ports-columns-layout">
-                <!-- Column 1: Cạnh trái (Từ sau ra trước) -->
-                <div class="port-col">
-                    <div class="port-col-head">
-                        <span>Cạnh trái máy (Từ bản lề ra trước)</span>
-                        <span class="port-col-badge">3 cổng tiếp điện</span>
+            <!-- Hardware Port Schematic (Apple Chassis Aesthetic) -->
+            <div class="hardware-schematic">
+                <!-- Left Edge Panel -->
+                <div class="chassis-panel">
+                    <div class="chassis-header">
+                        <span class="chassis-title">Cạnh trái máy (Từ bản lề ra trước)</span>
+                        <span class="chassis-badge">3 cổng tiếp điện</span>
                     </div>
-                    <div class="port-box">
-                        <span class="port-title">1. Cổng MagSafe 3 (Sát bản lề nhất)</span>
-                        <span class="port-limits">Vào: 96W (Fast Charge) • Ra: 0W (Chỉ nhận sạc)</span>
-                        <span class="port-desc">Cổng sạc từ tính thế hệ 3, hỗ trợ sạc nhanh 50% trong 30 phút</span>
-                    </div>
-                    <div class="port-box">
-                        <span class="port-title">2. Cổng Type-C / TB4 (Vị trí giữa)</span>
-                        <span class="port-limits">Vào: Tối đa 100W (USB-PD) • Ra: 15W (5V/3A)</span>
-                        <span class="port-desc">Thunderbolt 4 / USB4 (40 Gbps), cấp nguồn ngoại vi chuẩn Intel</span>
-                    </div>
-                    <div class="port-box">
-                        <span class="port-title">3. Cổng Type-C / TB4 (Gần jack tai nghe)</span>
-                        <span class="port-limits">Vào: Tối đa 100W (USB-PD) • Ra: 15W (5V/3A)</span>
-                        <span class="port-desc">Thunderbolt 4 / USB4 (40 Gbps), cấp nguồn ngoại vi chuẩn Intel</span>
-                    </div>
-                    <div class="port-note-box">
-                        <b>Phía trước cạnh trái:</b> Jack cắm tai nghe 3.5mm hỗ trợ công nghệ tự nhận diện trở kháng cao (High-Impedance Headphones).
+                    <div class="port-list">
+                        <div class="port-chip">
+                            <div class="port-symbol">
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="6" width="18" height="12" rx="6"/><circle cx="8" cy="12" r="1.2" fill="currentColor"/><circle cx="12" cy="12" r="1.2" fill="currentColor"/><circle cx="16" cy="12" r="1.2" fill="currentColor"/></svg>
+                            </div>
+                            <div class="port-chip-info">
+                                <div class="port-chip-title-row">
+                                    <span class="port-chip-name">1. Cổng MagSafe 3 (Sát bản lề)</span>
+                                </div>
+                                <span class="port-chip-spec">Sạc nhanh 96W • Từ tính MagSafe thế hệ 3</span>
+                            </div>
+                        </div>
+
+                        <div class="port-chip {active_class_left}">
+                            <div class="port-symbol">
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="8" width="16" height="8" rx="4"/><path d="M12 4v4m0 8v4"/></svg>
+                            </div>
+                            <div class="port-chip-info">
+                                <div class="port-chip-title-row">
+                                    <span class="port-chip-name">2. Cổng Type-C / TB4 (Vị trí giữa)</span>
+                                    {active_tag_left}
+                                </div>
+                                <span class="port-chip-spec">Thunderbolt 4 (40 Gbps) • USB-PD 100W</span>
+                            </div>
+                        </div>
+
+                        <div class="port-chip">
+                            <div class="port-symbol">
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="8" width="16" height="8" rx="4"/><path d="M12 4v4m0 8v4"/></svg>
+                            </div>
+                            <div class="port-chip-info">
+                                <div class="port-chip-title-row">
+                                    <span class="port-chip-name">3. Cổng Type-C / TB4 (Phía trước)</span>
+                                </div>
+                                <span class="port-chip-spec">Thunderbolt 4 (40 Gbps) • USB-PD 100W</span>
+                            </div>
+                        </div>
+
+                        <div class="port-chip">
+                            <div class="port-symbol">
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="3" fill="currentColor"/></svg>
+                            </div>
+                            <div class="port-chip-info">
+                                <div class="port-chip-title-row">
+                                    <span class="port-chip-name">4. Jack âm thanh 3.5mm</span>
+                                </div>
+                                <span class="port-chip-spec">Tự nhận diện tai nghe trở kháng cao</span>
+                            </div>
+                        </div>
                     </div>
                 </div>
 
-                <!-- Column 2: Cạnh phải (Từ sau ra trước) -->
-                <div class="port-col">
-                    <div class="port-col-head">
-                        <span>Cạnh phải máy (Từ bản lề ra trước)</span>
-                        <span class="port-col-badge">1 cổng tiếp điện</span>
+                <!-- Right Edge Panel -->
+                <div class="chassis-panel">
+                    <div class="chassis-header">
+                        <span class="chassis-title">Cạnh phải máy (Từ bản lề ra trước)</span>
+                        <span class="chassis-badge">1 cổng tiếp điện</span>
                     </div>
-                    <div class="port-note-box">
-                        <b>1. Cổng HDMI 2.0 (Sát bản lề):</b> Xuất màn hình rời 4K 60Hz (chỉ truyền tín hiệu hình ảnh/âm thanh, không có tính năng tiếp nhận/cấp sạc).
-                    </div>
-                    <div class="port-box">
-                        <span class="port-title">2. Cổng Type-C / TB4 (Ở giữa cạnh phải)</span>
-                        <span class="port-limits">Vào: Tối đa 100W (USB-PD) • Ra: 15W (5V/3A)</span>
-                        <span class="port-desc">Cổng Type-C duy nhất bên phải, nằm giữa HDMI và khe thẻ SD</span>
-                    </div>
-                    <div class="port-note-box">
-                        <b>3. Khe cắm thẻ nhớ SDXC (Phía trước):</b> Chuẩn UHS-II tốc độ cao (chỉ truyền dữ liệu thẻ nhớ, không có tính năng tiếp điện).
+                    <div class="port-list">
+                        <div class="port-chip">
+                            <div class="port-symbol">
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 7h16l-2 10H6L4 7z"/></svg>
+                            </div>
+                            <div class="port-chip-info">
+                                <div class="port-chip-title-row">
+                                    <span class="port-chip-name">1. Cổng HDMI 2.0 (Sát bản lề)</span>
+                                </div>
+                                <span class="port-chip-spec">Xuất màn hình 4K 60Hz (Không tiếp điện)</span>
+                            </div>
+                        </div>
+
+                        <div class="port-chip {active_class_right}">
+                            <div class="port-symbol">
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="8" width="16" height="8" rx="4"/><path d="M12 4v4m0 8v4"/></svg>
+                            </div>
+                            <div class="port-chip-info">
+                                <div class="port-chip-title-row">
+                                    <span class="port-chip-name">2. Cổng Type-C / TB4 (Ở giữa)</span>
+                                </div>
+                                <span class="port-chip-spec">Thunderbolt 4 (40 Gbps) • USB-PD 100W</span>
+                            </div>
+                        </div>
+
+                        <div class="port-chip">
+                            <div class="port-symbol">
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="5" y="4" width="14" height="16" rx="2"/><path d="M9 4v4h6V4"/></svg>
+                            </div>
+                            <div class="port-chip-info">
+                                <div class="port-chip-title-row">
+                                    <span class="port-chip-name">3. Khe cắm thẻ nhớ SDXC (Trước)</span>
+                                </div>
+                                <span class="port-chip-spec">Chuẩn UHS-II tốc độ cao (Không tiếp điện)</span>
+                            </div>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -1330,102 +1593,47 @@ def generate_html(data):
         <div class="section-wrap">
             <div class="sec-head">
                 <span class="sec-title">Ứng dụng tiêu thụ năng lượng</span>
-                <span class="sec-caption">Sắp xếp theo mức độ tải CPU và bộ nhớ</span>
+                <span class="sec-caption">Sắp xếp theo mức độ tải CPU và bộ nhớ RAM</span>
             </div>
 
-            <table class="app-table">
-                <thead>
-                    <tr>
-                        <th>Ứng dụng / Dịch vụ</th>
-                        <th style="text-align: right;">CPU</th>
-                        <th style="text-align: right;">RAM</th>
-                        <th style="text-align: right;">Tiến trình</th>
-                        <th style="text-align: center;">Mức độ</th>
-                        <th>Tải tỷ lệ</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {app_rows}
-                </tbody>
-            </table>
-        </div>
-
-        <!-- Section 4: Hardware Diagnostics with explicit comparison -->
-        <div class="section-wrap">
-            <div class="sec-head">
-                <span class="sec-title">Thông số kỹ thuật & so sánh hai chuẩn pin</span>
-                <span class="sec-caption">Chuẩn Apple Settings vs Đo thô phần cứng</span>
-            </div>
-
-            <div class="sec-explainer">
-                <b>Đối chiếu:</b> Apple báo <b>{data['apple_health_pct']}%</b> (Chai {data['apple_deg_pct']}%) dựa trên thuật toán làm phẳng danh định ({data['nominal_cap']} mAh). 
-                Trong khi cell pin đo thô ở nhiệt độ hiện tại tích được <b>{data['actual_cap']} mAh</b> ({data['raw_health_pct']}% sức khỏe, chai {data['raw_deg_pct']}%).
-            </div>
-
-            <div class="specs-grid">
-                <div class="spec-item">
-                    <span class="sp-key">Chuẩn Apple Settings</span>
-                    <span class="sp-val">{data['apple_health_pct']}%</span>
-                    <span class="sp-formula">Chai: {data['apple_deg_pct']}% (Khớp Cài đặt)</span>
-                </div>
-                <div class="spec-item">
-                    <span class="sp-key">Đo thô cell pin (Tức thời)</span>
-                    <span class="sp-val">{data['raw_health_pct']}%</span>
-                    <span class="sp-formula">Chai: {data['raw_deg_pct']}% (100% - {data['raw_health_pct']}%)</span>
-                </div>
-                <div class="spec-item">
-                    <span class="sp-key">Dung lượng sạc đầy hiện tại</span>
-                    <span class="sp-val">{data['actual_cap']} mAh</span>
-                    <span class="sp-note">Chu kỳ này đo được</span>
-                </div>
-                <div class="spec-item">
-                    <span class="sp-key">Dung lượng xuất xưởng</span>
-                    <span class="sp-val">{data['design_cap']} mAh</span>
-                    <span class="sp-note">Thiết kế ban đầu (100%)</span>
-                </div>
-                <div class="spec-item">
-                    <span class="sp-key">Dung lượng danh định (BMS)</span>
-                    <span class="sp-val">{data['nominal_cap']} mAh</span>
-                    <span class="sp-note">Cơ sở Apple tính ra 80%</span>
-                </div>
-                <div class="spec-item">
-                    <span class="sp-key">Số chu kỳ sạc</span>
-                    <span class="sp-val">{data['cycle_count']} / 1000</span>
-                    <span class="sp-note">Apple Battery Cycles</span>
-                </div>
-                <div class="spec-item">
-                    <span class="sp-key">Nhiệt độ pin</span>
-                    <span class="sp-val">{data['temp']} °C</span>
-                    <span class="sp-note">Mát mẻ (&lt; 35°C lý tưởng)</span>
-                </div>
-                <div class="spec-item">
-                    <span class="sp-key">Tình trạng pin</span>
-                    <span class="sp-val">Bình thường</span>
-                    <span class="sp-note">Low Power Mode: Bật</span>
-                </div>
+            <div class="table-card">
+                <table class="app-table">
+                    <thead>
+                        <tr>
+                            <th>Ứng dụng</th>
+                            <th style="text-align: right;">Tải CPU</th>
+                            <th style="text-align: right;">Bộ nhớ RAM</th>
+                            <th style="text-align: right;">Số luồng</th>
+                            <th style="text-align: center;">Đánh giá</th>
+                            <th style="text-align: right;">Mức độ tải</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {app_rows}
+                    </tbody>
+                </table>
             </div>
         </div>
 
-        <!-- Section 5: Activity Log -->
+        <!-- Section 4: Recent Timeline -->
         <div class="section-wrap">
             <div class="sec-head">
-                <span class="sec-title">Nhật ký màn hình và trạng thái</span>
-                <span class="sec-caption">Ghi nhận từ nhật ký nguồn điện pmset</span>
+                <span class="sec-title">Nhật ký trạng thái gần đây</span>
+                <span class="sec-caption">Lịch sử sự kiện nguồn điện & hoạt động</span>
             </div>
 
-            <div class="tl-container">
+            <div class="timeline-card">
                 {timeline_rows}
             </div>
         </div>
 
         <footer>
+            <span class="footer-brand">● BatFlow • Tulie Tech</span>
             <span>Cập nhật gần nhất lúc {data['generated_at']}</span>
-            <span>Không có tiến trình chạy ngầm</span>
         </footer>
     </div>
 
     <script>
-        // Live ticking second by second
         let sessSec = {data['session_on_sec']};
         let totalSec = {data['total_screen_sec']};
 
@@ -1454,8 +1662,8 @@ def generate_html(data):
     </script>
 </body>
 </html>
-'''
-    return html
+"""
+    return html_out
 
 def main():
     data = get_battery_and_processes()
