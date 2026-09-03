@@ -293,14 +293,15 @@ struct BatFiPopoverView: View {
                     }
                 }
 
-                HStack {
+                HStack(alignment: .firstTextBaseline) {
                     Text("Chế độ hoạt động")
                         .font(.system(size: 12, weight: .medium))
                         .foregroundColor(colorLabel)
                     Spacer()
-                    Text(model.isCharging ? "Đang nạp sạc pin" : (model.isExtConnected ? "Dùng nguồn ngoài (Tạm dừng sạc)" : "Dùng nguồn pin"))
+                    Text(model.isCharging ? "Đang nạp sạc pin" : (model.isExtConnected ? "Dùng nguồn ngoài\n(Tạm dừng sạc)" : "Dùng nguồn pin"))
                         .font(.system(size: 12, weight: .semibold))
                         .foregroundColor(colorValue)
+                        .multilineTextAlignment(.trailing)
                 }
             }
 
