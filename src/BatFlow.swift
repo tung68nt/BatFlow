@@ -358,55 +358,78 @@ struct BatFiPopoverView: View {
                     .font(.system(size: 11, weight: .semibold))
                     .foregroundColor(colorLabel)
 
-                ZStack {
-                    // Grid background lines
+                ZStack(alignment: .leading) {
+                    // Grid background lines with perfectly padded and aligned right labels
                     VStack(spacing: 0) {
-                        HStack {
-                            Spacer()
+                        // 100% Level
+                        HStack(spacing: 4) {
+                            Rectangle()
+                                .fill(colorDivider)
+                                .frame(height: 0.8)
                             Text("100%")
-                                .font(.system(size: 9.5, weight: .semibold, design: .monospaced))
+                                .font(.system(size: 9, weight: .medium, design: .monospaced))
                                 .foregroundColor(colorLabel)
+                                .frame(width: 32, alignment: .trailing)
                         }
-                        Divider().background(colorDivider).padding(.vertical, 10)
-                        HStack {
-                            Spacer()
+                        
+                        Spacer()
+                        
+                        // 50% Level
+                        HStack(spacing: 4) {
+                            Rectangle()
+                                .fill(colorDivider)
+                                .frame(height: 0.8)
                             Text("50%")
-                                .font(.system(size: 9.5, weight: .semibold, design: .monospaced))
+                                .font(.system(size: 9, weight: .medium, design: .monospaced))
                                 .foregroundColor(colorLabel)
+                                .frame(width: 32, alignment: .trailing)
                         }
-                        Divider().background(colorDivider).padding(.vertical, 10)
-                        HStack {
-                            Spacer()
+                        
+                        Spacer()
+                        
+                        // 0% Level
+                        HStack(spacing: 4) {
+                            Rectangle()
+                                .fill(colorDivider)
+                                .frame(height: 0.8)
                             Text("0%")
-                                .font(.system(size: 9.5, weight: .semibold, design: .monospaced))
+                                .font(.system(size: 9, weight: .medium, design: .monospaced))
                                 .foregroundColor(colorLabel)
+                                .frame(width: 32, alignment: .trailing)
                         }
                     }
+                    .padding(.leading, 8)
+                    .padding(.trailing, 8)
+                    .padding(.vertical, 7)
 
-                    // Green Chart Line & Gradient Fill
+                    // Green Chart Line & Gradient Fill (mapped precisely within grid)
                     GeometryReader { geo in
-                        let w = geo.size.width - 34
-                        let h = geo.size.height
+                        let insetLeft: CGFloat = 8
+                        let insetTop: CGFloat = 7
+                        let insetBottom: CGFloat = 7
+                        let labelWidth: CGFloat = 40
+                        let w = geo.size.width - insetLeft - labelWidth
+                        let h = geo.size.height - insetTop - insetBottom
 
                         // Area Path
                         Path { path in
                             guard model.historyPoints.count > 1 else { return }
                             let step = w / CGFloat(model.historyPoints.count - 1)
 
-                            path.move(to: CGPoint(x: 0, y: h * (1.0 - model.historyPoints[0].pct)))
+                            path.move(to: CGPoint(x: insetLeft, y: insetTop + h * (1.0 - model.historyPoints[0].pct)))
                             for (i, pt) in model.historyPoints.enumerated() {
-                                let x = CGFloat(i) * step
-                                let y = h * (1.0 - pt.pct)
+                                let x = insetLeft + CGFloat(i) * step
+                                let y = insetTop + h * (1.0 - pt.pct)
                                 path.addLine(to: CGPoint(x: x, y: y))
                             }
-                            path.addLine(to: CGPoint(x: w, y: h))
-                            path.addLine(to: CGPoint(x: 0, y: h))
+                            path.addLine(to: CGPoint(x: insetLeft + w, y: insetTop + h))
+                            path.addLine(to: CGPoint(x: insetLeft, y: insetTop + h))
                             path.closeSubpath()
                         }
                         .fill(
                             LinearGradient(
                                 gradient: Gradient(colors: [
-                                    emeraldGreen.opacity(isDark ? 0.35 : 0.30),
+                                    emeraldGreen.opacity(isDark ? 0.35 : 0.28),
                                     emeraldGreen.opacity(0.0)
                                 ]),
                                 startPoint: .top,
@@ -419,28 +442,28 @@ struct BatFiPopoverView: View {
                             guard model.historyPoints.count > 1 else { return }
                             let step = w / CGFloat(model.historyPoints.count - 1)
 
-                            path.move(to: CGPoint(x: 0, y: h * (1.0 - model.historyPoints[0].pct)))
+                            path.move(to: CGPoint(x: insetLeft, y: insetTop + h * (1.0 - model.historyPoints[0].pct)))
                             for (i, pt) in model.historyPoints.enumerated() {
-                                let x = CGFloat(i) * step
-                                let y = h * (1.0 - pt.pct)
+                                let x = insetLeft + CGFloat(i) * step
+                                let y = insetTop + h * (1.0 - pt.pct)
                                 path.addLine(to: CGPoint(x: x, y: y))
                             }
                         }
                         .stroke(
                             emeraldGreen,
-                            style: StrokeStyle(lineWidth: 2.2, lineCap: .round, lineJoin: .round)
+                            style: StrokeStyle(lineWidth: 2.0, lineCap: .round, lineJoin: .round)
                         )
                     }
                 }
-                .frame(height: 72)
+                .frame(height: 74)
                 .background(chartBg)
                 .overlay(
-                    RoundedRectangle(cornerRadius: 5)
+                    RoundedRectangle(cornerRadius: 6)
                         .stroke(colorCardStroke, lineWidth: 1)
                 )
-                .cornerRadius(5)
+                .cornerRadius(6)
 
-                // Time Labels below chart
+                // Time Labels below chart (aligned with chart insets)
                 HStack {
                     Text("11:00")
                     Spacer()
@@ -451,10 +474,12 @@ struct BatFiPopoverView: View {
                     Text("23:40")
                     Spacer()
                     Text("")
-                        .frame(width: 26)
+                        .frame(width: 32)
                 }
-                .font(.system(size: 9.5, weight: .semibold, design: .monospaced))
+                .font(.system(size: 9.5, weight: .regular, design: .monospaced))
                 .foregroundColor(colorLabel)
+                .padding(.leading, 8)
+                .padding(.trailing, 8)
             }
 
             Divider().background(colorDivider)
