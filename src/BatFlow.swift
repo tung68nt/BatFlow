@@ -253,7 +253,7 @@ struct BatFiPopoverView: View {
             // --- SECTION 1: HEADER (TRẠNG THÁI PIN) ---
             HStack {
                 Text("Trạng thái pin")
-                    .font(.system(size: 14.5, weight: .bold))
+                    .font(.system(size: 13, weight: .semibold))
                     .foregroundColor(colorValue)
                 Spacer()
                 HStack(spacing: 5) {
@@ -267,7 +267,7 @@ struct BatFiPopoverView: View {
                             .foregroundColor(Color.blue)
                     }
                     Text("\(model.currentPct)%")
-                        .font(.system(size: 15.5, weight: .bold, design: .rounded))
+                        .font(.system(size: 13.5, weight: .semibold, design: .rounded))
                         .foregroundColor(model.currentPct <= 20 ? Color(NSColor.systemRed) : (model.isCharging ? emeraldGreen : (model.isExtConnected ? Color.blue : colorValue)))
                 }
             }
@@ -275,31 +275,31 @@ struct BatFiPopoverView: View {
             VStack(spacing: 3) {
                 HStack {
                     Text(model.isCharging ? "Dự kiến đầy" : (model.isExtConnected ? "Trạng thái sạc" : "Dự kiến còn"))
-                        .font(.system(size: 12, weight: .medium))
+                        .font(.system(size: 12, weight: .regular))
                         .foregroundColor(colorLabel)
                     Spacer()
                     if model.isCharging {
                         Text(model.getEstimatedFullString())
-                            .font(.system(size: 12, weight: .bold))
+                            .font(.system(size: 12, weight: .medium))
                             .foregroundColor(emeraldGreen)
                     } else if model.isExtConnected {
                         Text("Đang giữ pin ở \(model.currentPct)% (Hold sạc)")
-                            .font(.system(size: 12, weight: .bold))
+                            .font(.system(size: 12, weight: .medium))
                             .foregroundColor(Color.blue)
                     } else {
                         Text(model.getEstimatedEmptyString())
-                            .font(.system(size: 12, weight: .semibold))
+                            .font(.system(size: 12, weight: .medium))
                             .foregroundColor(colorValue)
                     }
                 }
 
                 HStack(alignment: .firstTextBaseline) {
                     Text("Chế độ hoạt động")
-                        .font(.system(size: 12, weight: .medium))
+                        .font(.system(size: 12, weight: .regular))
                         .foregroundColor(colorLabel)
                     Spacer()
                     Text(model.isCharging ? "Đang nạp sạc pin" : (model.isExtConnected ? "Dùng nguồn ngoài\n(Tạm dừng sạc)" : "Dùng nguồn pin"))
-                        .font(.system(size: 12, weight: .semibold))
+                        .font(.system(size: 12, weight: .medium))
                         .foregroundColor(colorValue)
                         .multilineTextAlignment(.trailing)
                 }
@@ -311,41 +311,41 @@ struct BatFiPopoverView: View {
             VStack(spacing: 4.5) {
                 HStack {
                     Text("Nguồn cấp điện")
-                        .font(.system(size: 12, weight: .medium))
+                        .font(.system(size: 12, weight: .regular))
                         .foregroundColor(colorLabel)
                     Spacer()
                     Text(model.powerSourceStr)
-                        .font(.system(size: 12, weight: .semibold))
+                        .font(.system(size: 12, weight: .medium))
                         .foregroundColor(colorValue)
                 }
 
                 HStack {
                     Text("Số chu kỳ sạc")
-                        .font(.system(size: 12, weight: .medium))
+                        .font(.system(size: 12, weight: .regular))
                         .foregroundColor(colorLabel)
                     Spacer()
                     Text("\(model.cycleCount) / 1.000 lần")
-                        .font(.system(size: 12, weight: .semibold))
+                        .font(.system(size: 12, weight: .medium))
                         .foregroundColor(colorValue)
                 }
 
                 HStack {
                     Text("Nhiệt độ pin")
-                        .font(.system(size: 12, weight: .medium))
+                        .font(.system(size: 12, weight: .regular))
                         .foregroundColor(colorLabel)
                     Spacer()
                     Text(String(format: "%.1f°C", model.tempC))
-                        .font(.system(size: 12, weight: .semibold))
+                        .font(.system(size: 12, weight: .medium))
                         .foregroundColor(colorValue)
                 }
 
                 HStack {
                     Text("Sức khỏe pin")
-                        .font(.system(size: 12, weight: .medium))
+                        .font(.system(size: 12, weight: .regular))
                         .foregroundColor(colorLabel)
                     Spacer()
                     Text("\(model.appleHealthPct)% (Apple) • \(String(format: "%.1f", model.rawHealthPct))% (Cell)")
-                        .font(.system(size: 12, weight: .semibold))
+                        .font(.system(size: 12, weight: .medium))
                         .foregroundColor(colorValue)
                 }
             }
@@ -355,8 +355,8 @@ struct BatFiPopoverView: View {
             // --- SECTION 3: LAST 12 HOURS CHART (BIỂU ĐỒ 12 GIỜ QUA) ---
             VStack(alignment: .leading, spacing: 4) {
                 Text("Biểu đồ 12 giờ qua")
-                    .font(.system(size: 12.5, weight: .bold))
-                    .foregroundColor(colorValue)
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundColor(colorLabel)
 
                 ZStack {
                     // Grid background lines
@@ -462,38 +462,38 @@ struct BatFiPopoverView: View {
             // --- SECTION 4: POWER DISTRIBUTION (PHÂN BỔ ĐIỆN NĂNG) ---
             VStack(alignment: .leading, spacing: 4) {
                 Text("Phân bổ điện năng thời gian thực")
-                    .font(.system(size: 12.5, weight: .bold))
-                    .foregroundColor(colorValue)
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundColor(colorLabel)
 
                 VStack(spacing: 5) {
                     HStack {
                         VStack(alignment: .leading, spacing: 1) {
                             Text("Máy đang tiêu thụ")
-                                .font(.system(size: 10.5, weight: .medium))
+                                .font(.system(size: 10, weight: .regular))
                                 .foregroundColor(colorLabel)
                             Text(String(format: "%.1f W", model.sysLoadW))
-                                .font(.system(size: 13, weight: .bold, design: .monospaced))
+                                .font(.system(size: 13, weight: .semibold, design: .rounded))
                                 .foregroundColor(colorValue)
                         }
                         Spacer()
                         VStack(alignment: .trailing, spacing: 1) {
                             Text(model.isCharging ? "Dòng nạp vào pin" : "Dòng xả từ pin")
-                                .font(.system(size: 10.5, weight: .medium))
+                                .font(.system(size: 10, weight: .regular))
                                 .foregroundColor(colorLabel)
                             let wStr = model.isCharging && model.netWatts > 0 ? String(format: "+%.1f W", model.netWatts) : String(format: "%.1f W", model.netWatts)
                             Text(wStr)
-                                .font(.system(size: 13, weight: .bold, design: .monospaced))
+                                .font(.system(size: 13, weight: .semibold, design: .rounded))
                                 .foregroundColor(model.isCharging ? emeraldGreen : Color.orange)
                         }
                     }
 
                     HStack {
                         Text("Điện áp & Dòng điện")
-                            .font(.system(size: 10.5, weight: .medium))
+                            .font(.system(size: 10.5, weight: .regular))
                             .foregroundColor(colorLabel)
                         Spacer()
                         Text(String(format: "%.2f V • %d mA", model.voltage, model.amperage))
-                            .font(.system(size: 11.5, weight: .bold, design: .monospaced))
+                            .font(.system(size: 11, weight: .medium, design: .monospaced))
                             .foregroundColor(colorValue)
                     }
                 }
@@ -511,13 +511,13 @@ struct BatFiPopoverView: View {
             // --- SECTION 5: APPS (ỨNG DỤNG TIÊU THỤ) ---
             VStack(alignment: .leading, spacing: 4) {
                 Text("Ứng dụng tiêu thụ năng lượng")
-                    .font(.system(size: 12.5, weight: .bold))
-                    .foregroundColor(colorValue)
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundColor(colorLabel)
 
                 HStack {
                     Spacer()
                     Text("Không có ứng dụng gây tốn pin")
-                        .font(.system(size: 11.5, weight: .semibold))
+                        .font(.system(size: 11.5, weight: .regular))
                         .foregroundColor(colorLabel)
                     Spacer()
                 }
@@ -547,7 +547,7 @@ struct BatFiPopoverView: View {
                                 .frame(width: 18)
                             
                             Text("Báo cáo phân tích chi tiết...")
-                                .font(.system(size: 12, weight: .medium))
+                                .font(.system(size: 12, weight: .regular))
                                 .foregroundColor(colorValue)
                             
                             Spacer()
@@ -580,7 +580,7 @@ struct BatFiPopoverView: View {
                                 .frame(width: 18)
                             
                             Text("Giới thiệu BatFlow...")
-                                .font(.system(size: 12, weight: .medium))
+                                .font(.system(size: 12, weight: .regular))
                                 .foregroundColor(colorValue)
                             
                             Spacer()
@@ -613,7 +613,7 @@ struct BatFiPopoverView: View {
                                 .frame(width: 18)
                             
                             Text("Thoát BatFlow")
-                                .font(.system(size: 12, weight: .medium))
+                                .font(.system(size: 12, weight: .regular))
                                 .foregroundColor(colorValue)
                             
                             Spacer()
@@ -646,7 +646,7 @@ struct BatFiPopoverView: View {
                     Text("Tulie Tech")
                         .font(.system(size: 10.5, weight: .semibold))
                         .foregroundColor(colorValue.opacity(0.75))
-                    Text("• Giám sát pin thời gian thực")
+                    Text("• BatFlow Realtime")
                         .font(.system(size: 10, weight: .regular))
                         .foregroundColor(colorLabel.opacity(0.8))
                     Spacer()
