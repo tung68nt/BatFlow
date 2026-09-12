@@ -1,84 +1,67 @@
-import os, sys, subprocess, re, datetime, json, html as html_lib
+import os, sys, subprocess, re, datetime, json, plistlib, html as html_lib
 
-def get_battery_and_processes():
-    # 1. Official Apple Battery Health from system_profiler
-    sp = subprocess.run(['system_profiler', 'SPPowerDataType'], capture_output=True, text=True).stdout
-    max_cap_apple = re.search(r'Maximum Capacity:\s*(\d+)%', sp)
-    apple_health_pct = int(max_cap_apple.group(1)) if max_cap_apple else 80
+def get_battery_and_processes(custom_apple_health=None):
+    # 1. Direct hardware IOKit plist parsing (~20ms ultra fast & 100% type-safe)
+    try:
+        ioreg_bytes = subprocess.check_output(['ioreg', '-r', '-c', 'AppleSmartBattery', '-a'], timeout=1.0)
+        smart_pl = plistlib.loads(ioreg_bytes)
+        sb = smart_pl[0] if smart_pl else {}
+    except:
+        sb = {}
+
+    ext_conn = bool(sb.get('ExternalConnected', False)) or bool(sb.get('AppleRawExternalConnected', False))
+    is_charg = bool(sb.get('IsCharging', False))
+
+    ac_details = sb.get('AppleRawAdapterDetails', [])
+    adapter_rated_w = int(ac_details[0].get('Watts', 60)) if (ac_details and 'Watts' in ac_details[0]) else (60 if ext_conn else 0)
+
+    # 2. Official Apple Battery Health (use calibrated value if provided, else system_profiler)
+    if custom_apple_health is not None and custom_apple_health > 0:
+        apple_health_pct = custom_apple_health
+    else:
+        try:
+            sp = subprocess.run(['system_profiler', 'SPPowerDataType'], capture_output=True, text=True, timeout=1.0).stdout
+            max_cap_apple = re.search(r'Maximum Capacity:\s*(\d+)%', sp)
+            apple_health_pct = int(max_cap_apple.group(1)) if max_cap_apple else 80
+        except:
+            apple_health_pct = 80
     apple_deg_pct = 100 - apple_health_pct
 
-    # AC Charger Info from system_profiler
-    m_connected = re.search(r'Connected:\s*(Yes|No)', sp)
-    ac_connected = (m_connected.group(1) == 'Yes') if m_connected else False
-
-    m_watt = re.search(r'Wattage \(W\):\s*(\d+)', sp)
-    adapter_rated_w = int(m_watt.group(1)) if m_watt else 0
-
-    m_charging = re.search(r'Charging:\s*(Yes|No)', sp)
-    is_charging_sp = (m_charging.group(1) == 'Yes') if m_charging else False
-
-    # 2. ioreg query for hardware details
-    ioreg_out = subprocess.run(['ioreg', '-r', '-c', 'AppleSmartBattery'], capture_output=True, text=True).stdout
-    
-    def extract_val(pattern, text):
-        m = re.search(pattern, text)
-        return m.group(1).strip() if m else None
-
-    bat_data_match = re.search(r'\"BatteryData\"\s*=\s*\{([^}]+)\}', ioreg_out)
-    bat_dict = {}
-    if bat_data_match:
-        for pair in bat_data_match.group(1).split(','):
-            if '=' in pair:
-                k, v = pair.split('=', 1)
-                k = k.strip().replace('"', '')
-                bat_dict[k] = v.strip().replace('"', '')
-
-    full_cap = int(bat_dict.get('FullChargeCapacity', 4707))
-    nominal_cap = int(bat_dict.get('NominalChargeCapacity', 4867))
+    bat_dict = sb.get('BatteryData', {})
+    full_cap = int(bat_dict.get('FullChargeCapacity', 4682))
+    nominal_cap = int(bat_dict.get('NominalChargeCapacity', 4832))
     design_cap = int(bat_dict.get('DesignCapacity', 6075))
-    remaining_cap = int(bat_dict.get('RemainingCapacity', 1088))
-    cycle_count = int(extract_val(r'\"CycleCount\"\s*=\s*(\d+)', ioreg_out) or 780)
-    
-    # Raw hardware calculation
-    actual_cap = full_cap if full_cap > 0 else 4707
-    raw_health_pct = round((actual_cap / design_cap) * 100, 1) if design_cap else 77.5
+    cycle_count = int(sb.get('CycleCount', 780))
+    remaining_cap = int(bat_dict.get('RemainingCapacity', 3699))
+
+    actual_cap = full_cap if full_cap > 0 else 4682
+    raw_health_pct = round((actual_cap / design_cap) * 100, 1) if design_cap else 77.1
     raw_deg_pct = round(100.0 - raw_health_pct, 1)
 
-    raw_v = int(extract_val(r'\"AppleRawBatteryVoltage\"\s*=\s*(\d+)', ioreg_out) or 11000)
-    voltage = raw_v / 1000.0
+    raw_v = int(sb.get('AppleRawBatteryVoltage') or sb.get('Voltage') or 12080)
+    voltage = (raw_v / 1000.0) if raw_v > 100 else raw_v
 
-    raw_amp = int(extract_val(r'\"Amperage\"\s*=\s*(\d+)', ioreg_out) or 0)
+    raw_amp = int(sb.get('InstantAmperage') or sb.get('Amperage') or 0)
     if raw_amp > (1 << 63):
         amperage = raw_amp - (1 << 64)
     else:
         amperage = raw_amp
+    bat_net_watts = voltage * (amperage / 1000.0)
 
-    bat_net_watts = (voltage * (amperage / 1000.0))
+    raw_temp = int(bat_dict.get('Temperature') or bat_dict.get('VirtualTemperature') or sb.get('Temperature') or 3100)
+    temp = (raw_temp / 100.0) if raw_temp > 100 else raw_temp
 
-    raw_temp = int(extract_val(r'\"Temperature\"\s*=\s*(\d+)', ioreg_out) or 3100)
-    temp = raw_temp / 100.0 if raw_temp > 1000 else raw_temp
-
-    is_charging_ioreg = extract_val(r'\"IsCharging\"\s*=\s*(Yes|No)', ioreg_out) == 'Yes'
-    ext_connected_ioreg = extract_val(r'\"ExternalConnected\"\s*=\s*(Yes|No)', ioreg_out) == 'Yes'
-
-    ac_online = ac_connected or ext_connected_ioreg
-    charging_now = is_charging_sp or is_charging_ioreg or (amperage > 50)
+    ac_online = ext_conn
+    charging_now = is_charg and ac_online and (amperage > 50 or is_charg)
 
     # PowerTelemetryData for system load
-    pt_match = re.search(r'\"PowerTelemetryData\"\s*=\s*\{([^}]+)\}', ioreg_out)
-    pt = {}
-    if pt_match:
-        for pair in pt_match.group(1).split(','):
-            if '=' in pair:
-                k, v = pair.split('=', 1)
-                try:
-                    pt[k.strip().replace('"', '')] = int(v.strip().replace('"', ''))
-                except:
-                    pass
-
-    sys_load_w = pt.get('SystemLoad', 0) / 1000.0
-    if sys_load_w <= 0.5:
-        sys_load_w = abs(bat_net_watts) if not ac_online else 6.0
+    if not ac_online:
+        sys_load_w = abs(bat_net_watts)
+    else:
+        pt = sb.get('PowerTelemetryData', {})
+        sys_load_w = (pt.get('SystemLoad', 0) / 1000.0) if pt.get('SystemLoad') else (pt.get('SystemPowerIn', 0) / 1000.0)
+        if sys_load_w <= 0.5:
+            sys_load_w = 12.0 if charging_now else 7.5
 
     if ac_online:
         if adapter_rated_w > 0:
@@ -88,163 +71,213 @@ def get_battery_and_processes():
     else:
         adapter_in_w = 0.0
 
-    # Detect active port via AppleHPMDevice
-    ioreg_hpm = subprocess.run(['ioreg', '-r', '-c', 'AppleHPMDevice', '-l'], capture_output=True, text=True).stdout
+    # Detect active port: check if MagSafe 3 is physically connected via AppleTCControllerType11
+    is_magsafe_active = False
+    try:
+        tc_bytes = subprocess.check_output(['ioreg', '-r', '-c', 'AppleTCControllerType11', '-a'], timeout=0.8)
+        tc_pl = plistlib.loads(tc_bytes)
+        for item in tc_pl:
+            desc = item.get('PortDescription', '')
+            active = item.get('ConnectionActive', False)
+            if 'MagSafe' in desc and (active is True or active == 1):
+                is_magsafe_active = True
+                break
+    except:
+        pass
+
     active_port_name = 'Chưa cắm sạc'
+    port_protocol = 'Chưa kết nối nguồn ngoài'
+    active_port_id = 'none'
     
     if ac_online:
-        if 'Port-MagSafe' in ioreg_hpm and ('"IOAccessoryActivePowerMode" = 2' in ioreg_hpm or '"IOAccessoryActivePowerMode" = 3' in ioreg_hpm):
-            active_port_name = 'Cổng MagSafe 3 (Cạnh trái)'
-        elif 'Port-USB-C@3' in ioreg_hpm and '"IOAccessoryActivePowerMode" = 3' in ioreg_hpm:
-            active_port_name = 'Cổng Type-C (Cạnh phải)'
-        elif 'Port-USB-C@1' in ioreg_hpm and '"IOAccessoryActivePowerMode" = 3' in ioreg_hpm:
-            active_port_name = 'Cổng Type-C 1 (Cạnh trái - Phía sau)'
-        elif 'Port-USB-C@2' in ioreg_hpm and '"IOAccessoryActivePowerMode" = 3' in ioreg_hpm:
-            active_port_name = 'Cổng Type-C 2 (Cạnh trái - Phía trước)'
+        if is_magsafe_active:
+            active_port_name = 'Cổng MagSafe 3 (Sát bản lề)'
+            port_protocol = 'Chuẩn sạc từ tính MagSafe 3 (Apple Fast Charge)'
+            active_port_id = 'magsafe'
         else:
-            active_port_name = 'Cổng sạc Type-C / USB-PD'
+            active_port_name = f'Cổng Type-C ({adapter_rated_w}W)'
+            port_protocol = 'Chuẩn giao thức USB-Power Delivery (Thunderbolt 4 / USB-C)'
+            active_port_id = 'left_c1'
 
-    # 3. pmset -g batt
-    batt_out = subprocess.run(['pmset', '-g', 'batt'], capture_output=True, text=True).stdout
-    pct_m = re.search(r'(\d+)%', batt_out)
-    percent = int(pct_m.group(1)) if pct_m else 25
-    
-    rem_m = re.search(r'(\d+:\d+) remaining', batt_out)
-    time_remaining = rem_m.group(1) if rem_m else ('Cắm sạc' if charging_now else 'Đang tính toán')
+    # 3. Battery percentage matching macOS menu bar UI
+    cur_cap = int(sb.get('CurrentCapacity') or 80)
+    max_cap = int(sb.get('MaxCapacity') or 100)
+    percent = int(round((cur_cap / max_cap) * 100)) if max_cap > 0 else cur_cap
+
+    # Estimated remaining time
+    if charging_now:
+        t_full = int(sb.get('AvgTimeToFull', 0))
+        time_remaining = f"{t_full} phút" if (0 < t_full < 65535) else "Đang tính toán"
+    else:
+        t_empty = int(bat_dict.get('AvgTimeToEmpty', 0))
+        time_remaining = f"{t_empty // 60}h {t_empty % 60}m" if (0 < t_empty < 65535) else "Đang dùng pin"
 
     if charging_now:
         state_str = 'Đang sạc pin'
         state_color = '#22c55e'
     elif ac_online:
-        state_str = 'Nguồn điện Adapter (Đầy)'
-        state_color = '#38bdf8'
+        if percent >= 99:
+            state_str = 'Nguồn điện Adapter (Đầy)'
+            state_color = '#38bdf8'
+        else:
+            state_str = 'Nguồn điện Adapter (Tạm dừng sạc)'
+            state_color = '#38bdf8'
     else:
         state_str = 'Đang dùng pin (Xả pin)'
         state_color = '#f59e0b'
 
-    # 4. Top Energy/CPU processes
-    ps_out = subprocess.run(['ps', '-A', '-o', 'pid,%cpu,%mem,comm'], capture_output=True, text=True).stdout
+    # 4. Top Energy/CPU processes (Grouped by App & clean categorization)
+    ps_out = subprocess.run(['ps', '-A', '-o', 'pid,%cpu,%mem,command'], capture_output=True, text=True).stdout
     lines = ps_out.splitlines()[1:]
 
-    procs = []
+    def categorize_process(cmd):
+        cmd_l = cmd.lower()
+        
+        # 1. Standard .app bundles in Applications or User
+        app_m = re.search(r'/([^/]+)\.app/', cmd)
+        if app_m:
+            raw_name = app_m.group(1)
+            clean_name = re.sub(r'\s+Helper.*$', '', raw_name).strip()
+            if 'chrome' in clean_name.lower():
+                return ('Google Chrome', 'Trình duyệt web', 'browser')
+            elif 'antigravity' in clean_name.lower():
+                return ('Antigravity IDE', 'Lập trình & Agent AI', 'code')
+            elif 'auratube' in clean_name.lower():
+                return ('AuraTube', 'Phát video & Media', 'media')
+            elif 'batflow' in clean_name.lower():
+                return ('BatFlow', 'Giám sát pin & năng lượng', 'bolt')
+            elif 'canva' in clean_name.lower():
+                return ('Canva', 'Thiết kế đồ họa', 'code')
+            elif 'finder' in clean_name.lower():
+                return ('Finder', 'Quản lý tệp tin macOS', 'system')
+            elif 'menubar' in clean_name.lower():
+                return ('Menu Bar macOS', 'Giao diện thanh trạng thái', 'system')
+            elif 'safari' in clean_name.lower():
+                return ('Safari', 'Trình duyệt web macOS', 'browser')
+            elif 'activity monitor' in clean_name.lower():
+                return ('Activity Monitor', 'Theo dõi hoạt động macOS', 'system')
+            else:
+                return (clean_name, 'Ứng dụng người dùng', 'code')
+
+        # 2. Key system components & common services
+        if 'windowserver' in cmd_l:
+            return ('WindowServer', 'Đồ họa & Quản lý cửa sổ', 'display')
+        elif 'coreaudiod' in cmd_l:
+            return ('Core Audio', 'Hệ thống âm thanh macOS', 'audio')
+        elif 'kernel_task' in cmd_l:
+            return ('kernel_task', 'Quản lý nhiệt & Tài nguyên hệ thống', 'system')
+        elif 'mds' in cmd_l or 'mdworker' in cmd_l or 'spotlight' in cmd_l:
+            return ('Spotlight Indexing', 'Tìm kiếm & Đánh chỉ mục', 'search')
+        elif 'linkd' in cmd_l:
+            return ('Siri & Link Service', 'Liên kết & Tự động hóa macOS', 'system')
+        elif 'swcd' in cmd_l:
+            return ('Universal Links Daemon', 'Dịch vụ điều hướng liên kết', 'system')
+        elif 'tailscale' in cmd_l or 'nehelper' in cmd_l:
+            return ('Tailscale VPN', 'Mạng riêng ảo bảo mật', 'system')
+        elif 'zalo' in cmd_l:
+            return ('Zalo', 'Tin nhắn & Gọi thoại', 'chat')
+        elif 'claude' in cmd_l:
+            return ('Claude Desktop', 'Trợ lý AI', 'code')
+        elif 'docker' in cmd_l:
+            return ('Docker Container', 'Ảo hóa ứng dụng', 'code')
+        elif 'fpt chat' in cmd_l:
+            return ('FPT Chat', 'Tin nhắn nội bộ', 'chat')
+
+        # Fallback: clean executable name
+        base = cmd.split()[0].split('/')[-1]
+        return (base, 'Tiến trình dịch vụ nền', 'system')
+
+    aggregated = {}
     for l in lines:
         parts = l.strip().split(None, 3)
         if len(parts) == 4:
             try:
-                pid, cpu, mem, comm = parts[0], float(parts[1]), float(parts[2]), parts[3]
-                procs.append({'pid': pid, 'cpu': cpu, 'mem': mem, 'comm': comm})
+                pid, cpu, mem, cmd = parts[0], float(parts[1]), float(parts[2]), parts[3]
+                name, cat, icon_type = categorize_process(cmd)
+                if name not in aggregated:
+                    aggregated[name] = {'name': name, 'cat': cat, 'icon_type': icon_type, 'cpu': 0.0, 'mem': 0.0, 'count': 0}
+                aggregated[name]['cpu'] += cpu
+                aggregated[name]['mem'] += mem
+                aggregated[name]['count'] += 1
             except:
                 pass
 
-    def get_friendly_info(comm):
-        comm_lower = comm.lower()
-        if 'google chrome' in comm_lower:
-            return ('Google Chrome', 'Trình duyệt web')
-        elif 'antigravity ide' in comm_lower or 'electron' in comm_lower:
-            return ('Antigravity IDE', 'Lập trình & Agent AI')
-        elif 'windowserver' in comm_lower:
-            return ('WindowServer', 'Quản lý đồ họa macOS')
-        elif 'tailscale' in comm_lower or 'nehelper' in comm_lower or 'nesessionmanager' in comm_lower:
-            return ('Tailscale VPN', 'Mạng nội bộ bảo mật')
-        elif 'zalo' in comm_lower:
-            return ('Zalo', 'Tin nhắn & gọi thoại')
-        elif 'claude' in comm_lower:
-            return ('Claude Desktop', 'Trợ lý AI')
-        elif 'fpt chat' in comm_lower:
-            return ('FPT Chat', 'Tin nhắn nội bộ')
-        elif 'spotlight' in comm_lower or 'mds' in comm_lower or 'mdworker' in comm_lower:
-            return ('Spotlight', 'Đánh chỉ mục ổ cứng')
-        elif 'kernel_task' in comm_lower:
-            return ('kernel_task', 'Hạt nhân hệ điều hành')
-        elif 'coreaudiod' in comm_lower:
-            return ('Core Audio', 'Xử lý âm thanh')
-        elif 'docker' in comm_lower or 'com.docker' in comm_lower:
-            return ('Docker', 'Môi trường container')
-        elif 'finder' in comm_lower:
-            return ('Finder', 'Quản lý tệp tin')
-        else:
-            return (comm.split('/')[-1], 'Tiến trình nền')
+    top_apps = sorted(aggregated.values(), key=lambda x: (x['cpu'] + x['mem']*0.6), reverse=True)[:8]
 
-    aggregated = {}
-    for p in procs:
-        name, cat = get_friendly_info(p['comm'])
-        if name not in aggregated:
-            aggregated[name] = {'name': name, 'cat': cat, 'cpu': 0.0, 'mem': 0.0, 'count': 0}
-        aggregated[name]['cpu'] += p['cpu']
-        aggregated[name]['mem'] += p['mem']
-        aggregated[name]['count'] += 1
-
-    top_apps = sorted(aggregated.values(), key=lambda x: (x['cpu'] + x['mem']*0.5), reverse=True)[:8]
-
-    # 5. Timeline
-    today_str = datetime.date.today().strftime('%Y-%m-%d')
-    try:
-        pmset_proc = subprocess.run(['pmset', '-g', 'log'], capture_output=True)
-        pmset_log = pmset_proc.stdout.decode('utf-8', errors='replace') if pmset_proc.stdout else ''
-    except Exception:
-        pmset_log = ''
-    
+    # 5. Fast ASL Timeline & Screen Time Parser
+    import glob
+    asl_files = sorted(glob.glob('/var/log/powermanagement/2026.*.asl'))
     events = []
     screen_events = []
 
-    for line in pmset_log.splitlines():
-        if not line.startswith(today_str):
-            continue
-        parts = line.split()
-        if len(parts) < 2:
-            continue
-        time_part = parts[1]
+    for f in asl_files[-2:]:
+        proc = subprocess.run(['syslog', '-f', f], capture_output=True, text=True, errors='replace')
+        for line in proc.stdout.splitlines():
+            m = re.match(r'^([A-Z][a-z]{2}\s+\d+\s+\d+:\d+:\d+)\s+\S+\s+powerd\[\d+\]\s+<Notice>:\s+(.*)$', line)
+            if not m:
+                continue
+            time_str, msg = m.group(1), m.group(2)
+            if 'Display is turned on' in msg:
+                screen_events.append(('ON', time_str))
+                events.append({'time': time_str, 'type': 'on', 'title': 'Bật sáng màn hình', 'detail': 'Màn hình bật, phiên làm việc hoạt động'})
+            elif 'Display is turned off' in msg:
+                screen_events.append(('OFF', time_str))
+                events.append({'time': time_str, 'type': 'off', 'title': 'Tắt màn hình', 'detail': 'Màn hình tạm tắt tiết kiệm năng lượng'})
+            elif 'Entering Sleep state' in msg and 'Maintenance' not in msg:
+                screen_events.append(('OFF', time_str))
+                reason = 'Gập nắp máy' if 'Clamshell' in msg else ('Nhàn rỗi' if 'Idle' in msg else 'Bảo trì hệ thống')
+                events.append({'time': time_str, 'type': 'sleep', 'title': 'Chuyển sang chế độ ngủ', 'detail': f'Trạng thái: {reason}'})
+            elif 'Wake from' in msg and ('lid' in msg or 'CDNVA' in msg or 'Deep Idle' in msg):
+                events.append({'time': time_str, 'type': 'wake', 'title': 'Mở nắp máy / Thức dậy', 'detail': 'Khởi động lại phiên làm việc'})
+            elif 'Using AC(Charge:' in msg:
+                ch_m = re.search(r'Using AC\(Charge:\s*(\d+)\)', msg)
+                pct = ch_m.group(1) if ch_m else ''
+                if not (events and events[-1]['type'] == 'charge' and pct in events[-1]['title']):
+                    port_label = 'MagSafe 3' if active_port_id == 'magsafe' else 'nguồn AC'
+                    events.append({'time': time_str, 'type': 'charge', 'title': f'Cắm sạc {port_label} ({pct}%)', 'detail': f'Tiếp nhận nguồn {port_label} (Mức pin {pct}%)'})
+            elif 'Using Batt(Charge:' in msg:
+                ch_m = re.search(r'Using Batt\(Charge:\s*(\d+)\)', msg)
+                pct = ch_m.group(1) if ch_m else ''
+                if not (events and events[-1]['type'] == 'batt' and pct in events[-1]['title']):
+                    events.append({'time': time_str, 'type': 'batt', 'title': f'Dùng nguồn pin ({pct}%)', 'detail': f'Rút sạc, chuyển sang dùng pin (Mức pin {pct}%)'})
 
-        if 'Display is turned on' in line:
-            screen_events.append(('ON', time_part))
-            events.append({'time': time_part, 'type': 'on', 'title': 'Bật màn hình', 'detail': 'Bắt đầu tính thời gian onscreen'})
-        elif 'Display is turned off' in line:
-            screen_events.append(('OFF', time_part))
-            events.append({'time': time_part, 'type': 'off', 'title': 'Tắt màn hình', 'detail': 'Màn hình tắt tạm thời'})
-        elif 'Entering Sleep' in line:
-            screen_events.append(('OFF', time_part))
-            reason = 'Gập nắp' if 'Clamshell' in line else ('Nhàn rỗi' if 'Idle' in line else 'Bảo trì')
-            events.append({'time': time_part, 'type': 'sleep', 'title': 'Chuyển sang chế độ ngủ', 'detail': f'Trạng thái: {reason}'})
-        elif 'Wake from' in line or 'lidopen' in line:
-            events.append({'time': time_part, 'type': 'wake', 'title': 'Mở nắp máy / thức dậy', 'detail': 'Kích hoạt phiên làm việc'})
+    # If events is empty, provide live milestone
+    if not events:
+        now_time = datetime.datetime.now().strftime('%b %d %H:%M:%S')
+        if ac_online:
+            events.append({'time': now_time, 'type': 'charge', 'title': f'Kết nối {active_port_name}', 'detail': f'Duy trì ổn định mức pin {percent}%'})
+        else:
+            events.append({'time': now_time, 'type': 'on', 'title': 'Đang hoạt động trên nguồn pin', 'detail': f'Mức pin hiện tại: {percent}%'})
 
+    now = datetime.datetime.now()
+    this_year = now.year
     total_screen_sec = 0
     last_on = None
     for state, t_str in screen_events:
-        t_obj = datetime.datetime.strptime(f'{today_str} {t_str}', '%Y-%m-%d %H:%M:%S')
-        if state == 'ON':
-            last_on = t_obj
-        elif state == 'OFF' and last_on:
-            total_screen_sec += (t_obj - last_on).total_seconds()
-            last_on = None
+        try:
+            t_obj = datetime.datetime.strptime(f'{this_year} {t_str}', '%Y %b %d %H:%M:%S')
+            if state == 'ON':
+                last_on = t_obj
+            elif state == 'OFF' and last_on:
+                total_screen_sec += max(0, (t_obj - last_on).total_seconds())
+                last_on = None
+        except:
+            pass
 
     if last_on:
-        total_screen_sec += (datetime.datetime.now() - last_on).total_seconds()
+        total_screen_sec += max(0, (now - last_on).total_seconds())
+
+    session_on_sec = max(0, (now - last_on).total_seconds()) if last_on else 0
 
     total_h = int(total_screen_sec // 3600)
     total_m = int((total_screen_sec % 3600) // 60)
     total_s = int(total_screen_sec % 60)
 
-    # Session calculation (from ~20:01)
-    session_on_sec = 0
-    session_start_time = '20:01:06'
-    last_session_start = None
-    for state, t_str in screen_events:
-        if t_str >= '19:30:00':
-            t_obj = datetime.datetime.strptime(f'{today_str} {t_str}', '%Y-%m-%d %H:%M:%S')
-            if state == 'ON':
-                if not last_session_start:
-                    session_start_time = t_str
-                last_session_start = t_obj
-            elif state == 'OFF' and last_session_start:
-                session_on_sec += (t_obj - last_session_start).total_seconds()
-                last_session_start = None
-    if last_session_start:
-        session_on_sec += (datetime.datetime.now() - last_session_start).total_seconds()
-
     sess_h = int(session_on_sec // 3600)
     sess_m = int((session_on_sec % 3600) // 60)
     sess_s = int(session_on_sec % 60)
+
+    session_start_time = last_on.strftime('%H:%M:%S') if last_on else '20:01:06'
 
     return {
         'percent': percent,
@@ -264,6 +297,8 @@ def get_battery_and_processes():
         'ac_online': ac_online,
         'charging_now': charging_now,
         'active_port_name': active_port_name,
+        'active_port_id': active_port_id,
+        'port_protocol': port_protocol,
         'adapter_rated_w': adapter_rated_w,
         'adapter_in_w': round(adapter_in_w, 1),
         'sys_load_w': round(sys_load_w, 1),
@@ -352,6 +387,26 @@ def make_dynamic_battery_svg(pct, is_charging=False, size=58):
     </svg>'''
     return svg
 
+def get_app_icon_svg(icon_type):
+    if icon_type == 'browser':
+        return '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#007AFF" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>'
+    elif icon_type == 'code':
+        return '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#5856D6" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>'
+    elif icon_type == 'media':
+        return '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#FF2D55" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="6 4 18 12 6 20 6 4" fill="#FF2D55" opacity="0.85"/></svg>'
+    elif icon_type == 'chat':
+        return '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#34C759" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>'
+    elif icon_type == 'display':
+        return '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#AF52DE" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>'
+    elif icon_type == 'audio':
+        return '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#FF9500" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"/></svg>'
+    elif icon_type == 'bolt':
+        return '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#30D158" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z" fill="#30D158" opacity="0.85"/></svg>'
+    elif icon_type == 'search':
+        return '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#FF9500" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>'
+    else:
+        return '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#8E8E93" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>'
+
 def generate_html(data):
     # Determine Status Capsule styling & icon
     if data['charging_now']:
@@ -374,6 +429,8 @@ def generate_html(data):
         mem = round(app.get('mem', 0), 1)
         safe_name = html_lib.escape(str(app.get('name', '')))
         safe_cat = html_lib.escape(str(app.get('cat', '')))
+        icon_type = app.get('icon_type', 'system')
+        icon_svg = get_app_icon_svg(icon_type)
 
         if cpu > 20 or mem > 20:
             badge_html = '<span class="status-badge badge-high">Cao</span>'
@@ -383,15 +440,16 @@ def generate_html(data):
             badge_html = '<span class="status-badge badge-low">Thấp</span>'
 
         load_w = min(100, max(4, int(cpu * 1.4 + mem * 1.2)))
-        initial_letter = safe_name[:1].upper() if safe_name else "A"
 
         app_rows += f"""
         <tr>
             <td class="td-app">
-                <div class="app-icon-badge">{initial_letter}</div>
-                <div class="app-meta">
-                    <span class="app-title">{safe_name}</span>
-                    <span class="app-type">{safe_cat}</span>
+                <div class="app-cell">
+                    <div class="app-icon-badge">{icon_svg}</div>
+                    <div class="app-meta">
+                        <span class="app-title">{safe_name}</span>
+                        <span class="app-type">{safe_cat}</span>
+                    </div>
                 </div>
             </td>
             <td class="td-mono">{cpu}%</td>
@@ -413,6 +471,10 @@ def generate_html(data):
         elif ev.get('type') == 'sleep':
             dot_color = '#AF52DE'
         elif ev.get('type') == 'wake':
+            dot_color = '#FF9500'
+        elif ev.get('type') == 'charge':
+            dot_color = '#007AFF'
+        elif ev.get('type') == 'batt':
             dot_color = '#FF9500'
 
         safe_ev_time = html_lib.escape(str(ev.get('time', '')))
@@ -439,21 +501,36 @@ def generate_html(data):
         bat_w = data['bat_net_watts']
         adapter_w = data['adapter_in_w']
 
-        if bat_w >= 0:
+        if bat_w > 0.5:
             bat_flow_label = f"+{bat_w} W"
             bat_flow_desc = "Đang nạp vào pin (Dương)"
             bat_flow_color = "#34C759"
             alert_box = ""
+        elif bat_w < -0.5:
+            if adapter_w > 0 and adapter_w < sys_w:
+                bat_flow_label = f"{bat_w} W"
+                bat_flow_desc = "Pin đang xả bù (Củ sạc yếu)"
+                bat_flow_color = "#FF3B30"
+                alert_box = f"""
+                <div class="power-warning">
+                    <b>Cảnh báo củ sạc yếu:</b> Củ sạc ({adapter_w}W) nhỏ hơn công suất máy đang dùng ({sys_w}W). Pin đang phải bù thêm {abs(bat_w)}W. 
+                    Hãy sử dụng củ sạc công suất lớn hơn hoặc giảm tải để sạc được pin.
+                </div>
+                """
+            else:
+                bat_flow_label = f"{bat_w} W"
+                bat_flow_desc = "Đang khởi động sạc (Soft-start)"
+                bat_flow_color = "#FF9500"
+                alert_box = f"""
+                <div class="power-info-box" style="background: rgba(255, 149, 0, 0.08); border: 1px solid rgba(255, 149, 0, 0.22); border-radius: 10px; padding: 10px 14px; margin-top: 12px; font-size: 11.5px; color: var(--text-secondary);">
+                    <b style="color: #FF9500;">⚡ Đang khởi động cấp nguồn:</b> Củ sạc {adapter_w}W đáp ứng tốt công suất máy ({sys_w}W). Mạch sạc Apple BMS đang trong giai đoạn khởi động tăng dần dòng nạp (Soft-start 2-3s).
+                </div>
+                """
         else:
-            bat_flow_label = f"{bat_w} W"
-            bat_flow_desc = "Pin đang xả bù (Thâm hụt)"
-            bat_flow_color = "#FF3B30"
-            alert_box = f"""
-            <div class="power-warning">
-                <b>Cảnh báo thâm hụt:</b> Củ sạc không đủ cấp cho công suất máy ({sys_w}W). Pin đang phải bù thêm {abs(bat_w)}W. 
-                Hãy giảm độ sáng màn hình hoặc đóng bớt ứng dụng nặng để dòng sạc dương trở lại.
-            </div>
-            """
+            bat_flow_label = "0.0 W"
+            bat_flow_desc = "Đang giữ pin (Bypass nguồn ngoài)"
+            bat_flow_color = "#007AFF"
+            alert_box = ""
 
         total_bar = max(adapter_w, sys_w + max(0, bat_w))
         sys_pct = min(100, int((sys_w / total_bar) * 100)) if total_bar > 0 else 50
@@ -465,8 +542,8 @@ def generate_html(data):
                 <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
             </div>
             <div class="conn-text">
-                <span class="conn-title">Đang tiếp nhận nguồn: <b>{data.get('active_port_name', 'Cổng sạc Type-C')}</b></span>
-                <span class="conn-spec">Chuẩn giao thức USB-Power Delivery • Công suất cấp <b>{adapter_w} W</b></span>
+                <span class="conn-title">Đang tiếp nhận nguồn: <b>{data.get('active_port_name', 'Cổng MagSafe 3')}</b></span>
+                <span class="conn-spec">{data.get('port_protocol', 'Chuẩn sạc từ tính MagSafe 3')} • Công suất cấp <b>{adapter_w} W</b></span>
             </div>
             <div class="conn-badge">
                 <span class="pulse-dot"></span>
@@ -558,14 +635,27 @@ def generate_html(data):
         </div>
         """
 
-    # Check port connection status
-    port_name = data.get('active_port_name', '')
-    is_left_active = "Trái" in port_name or "USB-C" in port_name or "MagSafe" in port_name
-    is_right_active = "Phải" in port_name
+    # Check discrete hardware port connection status
+    active_port_id = data.get('active_port_id', 'magsafe')
+    adapter_w_int = int(round(data.get('adapter_in_w', 65.0)))
+    ac_online = data.get('ac_online', False)
 
-    active_tag_left = '<span class="port-chip-badge">● Đang sạc 65W</span>' if is_left_active else ''
-    active_class_left = 'port-chip-active' if is_left_active else ''
-    active_class_right = 'port-chip-active' if is_right_active else ''
+    is_magsafe_active = ac_online and (active_port_id == 'magsafe')
+    is_left_c1_active = ac_online and (active_port_id == 'left_c1')
+    is_left_c2_active = ac_online and (active_port_id == 'left_c2')
+    is_right_c_active = ac_online and (active_port_id == 'right_c')
+
+    active_tag_magsafe = f'<span id="port-tag-magsafe" class="port-chip-badge" style="display: {"inline-flex" if is_magsafe_active else "none"};"><span class="badge-dot"></span>Đang sạc {adapter_w_int}W</span>'
+    active_class_magsafe = 'port-chip-active' if is_magsafe_active else ''
+
+    active_tag_left_c1 = f'<span id="port-tag-left-c1" class="port-chip-badge" style="display: {"inline-flex" if is_left_c1_active else "none"};"><span class="badge-dot"></span>Đang sạc {adapter_w_int}W</span>'
+    active_class_left_c1 = 'port-chip-active' if is_left_c1_active else ''
+
+    active_tag_left_c2 = f'<span id="port-tag-left-c2" class="port-chip-badge" style="display: {"inline-flex" if is_left_c2_active else "none"};"><span class="badge-dot"></span>Đang sạc {adapter_w_int}W</span>'
+    active_class_left_c2 = 'port-chip-active' if is_left_c2_active else ''
+
+    active_tag_right_c = f'<span id="port-tag-right-c" class="port-chip-badge" style="display: {"inline-flex" if is_right_c_active else "none"};"><span class="badge-dot"></span>Đang sạc {adapter_w_int}W</span>'
+    active_class_right_c = 'port-chip-active' if is_right_c_active else ''
 
     # Read base64 icon safely
     icon_b64 = ""
@@ -727,17 +817,63 @@ def generate_html(data):
             font-variant-numeric: tabular-nums;
         }}
         .pulse-dot {{
-            width: 5.5px;
-            height: 5.5px;
+            width: 6px;
+            height: 6px;
+            min-width: 6px;
+            min-height: 6px;
+            aspect-ratio: 1 / 1;
             border-radius: 50%;
             background: var(--apple-green);
-            box-shadow: 0 0 5px var(--apple-green);
-            animation: pulse 1.6s infinite;
+            flex-shrink: 0;
+            display: inline-block;
+            vertical-align: middle;
+            animation: pulse-dot-fade 2s infinite ease-in-out;
         }}
-        @keyframes pulse {{
-            0% {{ opacity: 1; transform: scale(1); }}
-            50% {{ opacity: 0.35; transform: scale(0.85); }}
-            100% {{ opacity: 1; transform: scale(1); }}
+        @keyframes pulse-dot-fade {{
+            0%, 100% {{ opacity: 1; }}
+            50% {{ opacity: 0.35; }}
+        }}
+        .header-actions {{
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }}
+        .app-version-pill {{
+            font-size: 11px;
+            font-weight: 600;
+            color: var(--text-3);
+            background: var(--surface-sub);
+            border: 1px solid var(--border);
+            padding: 1.5px 6px;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: all 0.15s ease;
+            user-select: none;
+        }}
+        .app-version-pill:hover {{
+            color: var(--apple-blue);
+            border-color: rgba(0, 122, 255, 0.3);
+        }}
+        .btn-action-update {{
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            background: var(--surface);
+            border: 1px solid var(--border);
+            color: var(--text-2);
+            padding: 6px 12px;
+            border-radius: 8px;
+            font-size: 12px;
+            font-weight: 500;
+            cursor: pointer;
+            box-shadow: 0 1px 2px rgba(0, 0, 0, 0.03);
+            transition: all 0.15s ease;
+            user-select: none;
+        }}
+        .btn-action-update:hover {{
+            background: var(--surface-sub);
+            color: var(--apple-blue);
+            border-color: rgba(0, 122, 255, 0.35);
         }}
         .btn-sync {{
             display: inline-flex;
@@ -758,6 +894,17 @@ def generate_html(data):
             background: var(--surface-sub);
             color: var(--text-1);
             border-color: rgba(0, 0, 0, 0.15);
+        }}
+        .btn-sync.loading {{
+            opacity: 0.75;
+            pointer-events: none;
+        }}
+        @keyframes spin {{
+            from {{ transform: rotate(0deg); }}
+            to {{ transform: rotate(360deg); }}
+        }}
+        .spin-icon {{
+            animation: spin 0.8s linear infinite;
         }}
 
         /* Hero Battery Card */
@@ -1051,7 +1198,12 @@ def generate_html(data):
         .leg-dot {{
             width: 6px;
             height: 6px;
+            min-width: 6px;
+            min-height: 6px;
+            aspect-ratio: 1 / 1;
             border-radius: 50%;
+            flex-shrink: 0;
+            display: inline-block;
         }}
         .dot-sys {{ background: var(--apple-blue); }}
         .dot-bat {{ background: var(--apple-green); }}
@@ -1151,31 +1303,32 @@ def generate_html(data):
             }}
         }}
         .port-chip-active {{
-            background: rgba(52, 199, 89, 0.06) !important;
-            border-color: var(--apple-green) !important;
+            background: rgba(52, 199, 89, 0.04) !important;
+            border-color: rgba(52, 199, 89, 0.4) !important;
         }}
         .port-symbol {{
-            width: 30px;
-            height: 30px;
-            border-radius: 8px;
-            background: var(--surface);
-            border: 1px solid var(--border-sub);
+            width: 38px;
+            height: 38px;
+            border-radius: 10px;
+            background: var(--surface-sub);
+            border: 1px solid var(--border);
             display: flex;
             align-items: center;
             justify-content: center;
             flex-shrink: 0;
-            color: var(--text-2);
+            color: var(--text-1);
+            transition: all 0.2s ease;
         }}
         .port-chip-active .port-symbol {{
-            background: var(--apple-green);
-            color: #ffffff;
-            border-color: transparent;
-            box-shadow: 0 0 10px rgba(52, 199, 89, 0.4);
+            background: var(--apple-green) !important;
+            color: #ffffff !important;
+            border-color: transparent !important;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08) !important;
         }}
         .port-chip-info {{
             display: flex;
             flex-direction: column;
-            gap: 1px;
+            gap: 2px;
             flex: 1;
         }}
         .port-chip-title-row {{
@@ -1184,17 +1337,37 @@ def generate_html(data):
             align-items: center;
         }}
         .port-chip-name {{
-            font-size: 12px;
+            font-size: 13px;
             font-weight: 600;
             color: var(--text-1);
         }}
         .port-chip-badge {{
-            font-size: 10px;
+            display: inline-flex;
+            align-items: center;
+            font-size: 11px;
             font-weight: 500;
             color: var(--apple-green);
+            background: rgba(52, 199, 89, 0.08);
+            border: 1px solid rgba(52, 199, 89, 0.2);
+            padding: 2px 7px;
+            border-radius: 100px;
+            line-height: 1.2;
+        }}
+        .badge-dot {{
+            width: 5px;
+            height: 5px;
+            min-width: 5px;
+            min-height: 5px;
+            aspect-ratio: 1 / 1;
+            border-radius: 50%;
+            background: var(--apple-green);
+            display: inline-block;
+            flex-shrink: 0;
+            margin-right: 5px;
+            vertical-align: middle;
         }}
         .port-chip-spec {{
-            font-size: 11px;
+            font-size: 11.5px;
             color: var(--text-3);
         }}
 
@@ -1232,37 +1405,36 @@ def generate_html(data):
             background: rgba(0, 0, 0, 0.015);
         }}
         .td-app {{
+            width: 38%;
+        }}
+        .app-cell {{
             display: flex;
             align-items: center;
-            gap: 10px;
-            width: 36%;
+            gap: 12px;
+            min-width: 220px;
         }}
         .app-icon-badge {{
-            width: 24px;
-            height: 24px;
-            border-radius: 6px;
+            width: 30px;
+            height: 30px;
+            border-radius: 8px;
             background: var(--surface-sub);
             border: 1px solid var(--border-sub);
             display: flex;
             align-items: center;
             justify-content: center;
-            font-size: 10.5px;
-            font-weight: 600;
-            color: var(--text-2);
             flex-shrink: 0;
         }}
         .app-meta {{
             display: flex;
             flex-direction: column;
-            gap: 0;
-            overflow: hidden;
+            gap: 2px;
         }}
         .app-title {{
+            font-size: 12.5px;
             font-weight: 600;
             color: var(--text-1);
-            text-overflow: ellipsis;
-            overflow: hidden;
-            white-space: nowrap;
+            word-break: break-word;
+            line-height: 1.3;
         }}
         .app-type {{
             font-size: 10.5px;
@@ -1366,9 +1538,14 @@ def generate_html(data):
             z-index: 1;
         }}
         .tl-dot {{
-            width: 6.5px;
-            height: 6.5px;
+            width: 6px;
+            height: 6px;
+            min-width: 6px;
+            min-height: 6px;
+            aspect-ratio: 1 / 1;
             border-radius: 50%;
+            flex-shrink: 0;
+            display: inline-block;
         }}
         .tl-content {{
             display: flex;
@@ -1419,14 +1596,21 @@ def generate_html(data):
                             <span class="pulse-dot"></span>
                             <span id="live-clock">{data['generated_at']}</span>
                         </span>
+                        <span class="app-version-pill" onclick="triggerCheckUpdate()" title="Nhấn để kiểm tra cập nhật BatFlow">v1.0.1</span>
                     </div>
                     <span class="device-chip">Apple M1 Pro • Bộ nhớ 16 GB</span>
                 </div>
             </div>
-            <button class="btn-sync" onclick="location.reload()">
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/></svg>
-                Làm mới
-            </button>
+            <div class="header-actions">
+                <button class="btn-action-update" id="btn-update" onclick="triggerCheckUpdate()" title="Kiểm tra phiên bản mới BatFlow">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                    Bản mới
+                </button>
+                <button class="btn-sync" id="btn-sync" onclick="triggerRefresh()">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/></svg>
+                    Làm mới
+                </button>
+            </div>
         </header>
 
         <!-- Primary Status Card -->
@@ -1434,9 +1618,9 @@ def generate_html(data):
             <div class="main-top">
                 <div class="pct-group">
                     <span class="pct-number">{data['percent']}%</span>
-                    <div class="status-capsule {status_theme_class}">
-                        {status_icon}
-                        <span>{data['state_str']}</span>
+                    <div id="hero-status-capsule" class="status-capsule {status_theme_class}">
+                        <span id="hero-status-icon">{status_icon}</span>
+                        <span id="hero-status-text">{data['state_str']}</span>
                     </div>
                 </div>
                 <div class="eta-group">
@@ -1491,52 +1675,68 @@ def generate_html(data):
                         <span class="chassis-badge">3 cổng tiếp điện</span>
                     </div>
                     <div class="port-list">
-                        <div class="port-chip">
+                        <!-- Port 1: MagSafe 3 -->
+                        <div id="port-chip-magsafe" class="port-chip {active_class_magsafe}">
                             <div class="port-symbol">
-                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="6" width="18" height="12" rx="6"/><circle cx="8" cy="12" r="1.2" fill="currentColor"/><circle cx="12" cy="12" r="1.2" fill="currentColor"/><circle cx="16" cy="12" r="1.2" fill="currentColor"/></svg>
+                                <svg width="20" height="20" viewBox="0 0 16 16" fill="currentColor">
+                                    <path d="M11.251.068a.5.5 0 0 1 .227.58L9.677 6.5H13a.5.5 0 0 1 .364.843l-8 8.5a.5.5 0 0 1-.842-.49L6.323 9.5H3a.5.5 0 0 1-.364-.843l8-8.5a.5.5 0 0 1 .615-.09z"/>
+                                </svg>
                             </div>
                             <div class="port-chip-info">
                                 <div class="port-chip-title-row">
                                     <span class="port-chip-name">1. Cổng MagSafe 3 (Sát bản lề)</span>
+                                    {active_tag_magsafe}
                                 </div>
-                                <span class="port-chip-spec">Sạc nhanh 96W • Từ tính MagSafe thế hệ 3</span>
+                                <span class="port-chip-spec">Sạc nhanh 96W • Chuẩn từ tính Apple MagSafe 3 (Chỉ nhận nguồn sạc vào)</span>
                             </div>
                         </div>
 
-                        <div class="port-chip {active_class_left}">
+                        <!-- Port 2: Type-C 1 -->
+                        <div id="port-chip-left-c1" class="port-chip {active_class_left_c1}">
                             <div class="port-symbol">
-                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="8" width="16" height="8" rx="4"/><path d="M12 4v4m0 8v4"/></svg>
+                                <svg width="22" height="22" viewBox="0 0 16 16" fill="currentColor">
+                                    <path d="M3.5 7.5a.5.5 0 0 0 0 1h9a.5.5 0 0 0 0-1z"/>
+                                    <path d="M0 8a3 3 0 0 1 3-3h10a3 3 0 1 1 0 6H3a3 3 0 0 1-3-3m3-2a2 2 0 1 0 0 4h10a2 2 0 1 0 0-4z"/>
+                                </svg>
                             </div>
                             <div class="port-chip-info">
                                 <div class="port-chip-title-row">
-                                    <span class="port-chip-name">2. Cổng Type-C / TB4 (Vị trí giữa)</span>
-                                    {active_tag_left}
+                                    <span class="port-chip-name">2. Cổng Type-C / Thunderbolt 4 (Vị trí giữa)</span>
+                                    {active_tag_left_c1}
                                 </div>
-                                <span class="port-chip-spec">Thunderbolt 4 (40 Gbps) • USB-PD 100W</span>
+                                <span class="port-chip-spec">TB4 (40 Gbps) • Vào: Sạc PD 100W • Ra: Cấp nguồn 15W, Xuất hình 6K 60Hz</span>
                             </div>
                         </div>
 
-                        <div class="port-chip">
+                        <!-- Port 3: Type-C 2 -->
+                        <div id="port-chip-left-c2" class="port-chip {active_class_left_c2}">
                             <div class="port-symbol">
-                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="8" width="16" height="8" rx="4"/><path d="M12 4v4m0 8v4"/></svg>
+                                <svg width="22" height="22" viewBox="0 0 16 16" fill="currentColor">
+                                    <path d="M3.5 7.5a.5.5 0 0 0 0 1h9a.5.5 0 0 0 0-1z"/>
+                                    <path d="M0 8a3 3 0 0 1 3-3h10a3 3 0 1 1 0 6H3a3 3 0 0 1-3-3m3-2a2 2 0 1 0 0 4h10a2 2 0 1 0 0-4z"/>
+                                </svg>
                             </div>
                             <div class="port-chip-info">
                                 <div class="port-chip-title-row">
-                                    <span class="port-chip-name">3. Cổng Type-C / TB4 (Phía trước)</span>
+                                    <span class="port-chip-name">3. Cổng Type-C / Thunderbolt 4 (Phía trước)</span>
+                                    {active_tag_left_c2}
                                 </div>
-                                <span class="port-chip-spec">Thunderbolt 4 (40 Gbps) • USB-PD 100W</span>
+                                <span class="port-chip-spec">TB4 (40 Gbps) • Vào: Sạc PD 100W • Ra: Cấp nguồn 15W, Xuất hình 6K 60Hz</span>
                             </div>
                         </div>
 
+                        <!-- Port 4: 3.5mm Headphone Jack -->
                         <div class="port-chip">
                             <div class="port-symbol">
-                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="3" fill="currentColor"/></svg>
+                                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                    <path d="M3 14h3a2 2 0 0 1 2 2v3a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-7a9 9 0 0 1 18 0v7a2 2 0 0 1-2 2h-1a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2h3"/>
+                                </svg>
                             </div>
                             <div class="port-chip-info">
                                 <div class="port-chip-title-row">
                                     <span class="port-chip-name">4. Jack âm thanh 3.5mm</span>
                                 </div>
-                                <span class="port-chip-spec">Tự nhận diện tai nghe trở kháng cao</span>
+                                <span class="port-chip-spec">Đầu ra âm thanh analog • Tự nhận diện tai nghe trở kháng cao</span>
                             </div>
                         </div>
                     </div>
@@ -1549,39 +1749,54 @@ def generate_html(data):
                         <span class="chassis-badge">1 cổng tiếp điện</span>
                     </div>
                     <div class="port-list">
+                        <!-- Port 1: HDMI 2.0 -->
                         <div class="port-chip">
                             <div class="port-symbol">
-                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 7h16l-2 10H6L4 7z"/></svg>
+                                <svg width="22" height="22" viewBox="0 0 16 16" fill="currentColor">
+                                    <path d="M2.5 7a.5.5 0 0 0 0 1h11a.5.5 0 0 0 0-1z"/>
+                                    <path d="M1 5a1 1 0 0 0-1 1v3a1 1 0 0 0 1 1h.293l.707.707a1 1 0 0 0 .707.293h10.586a1 1 0 0 0 .707-.293l.707-.707H15a1 1 0 0 0 1-1V6a1 1 0 0 0-1-1zm0 1h14v3h-.293a1 1 0 0 0-.707.293l-.707.707H2.707L2 9.293A1 1 0 0 0 1.293 9H1z"/>
+                                </svg>
                             </div>
                             <div class="port-chip-info">
                                 <div class="port-chip-title-row">
                                     <span class="port-chip-name">1. Cổng HDMI 2.0 (Sát bản lề)</span>
                                 </div>
-                                <span class="port-chip-spec">Xuất màn hình 4K 60Hz (Không tiếp điện)</span>
+                                <span class="port-chip-spec">Đầu ra xuất hình: Chuẩn HDMI 2.0 hỗ trợ 4K 60Hz & Âm thanh đa kênh</span>
                             </div>
                         </div>
 
-                        <div class="port-chip {active_class_right}">
+                        <!-- Port 2: Type-C Right -->
+                        <div id="port-chip-right-c" class="port-chip {active_class_right_c}">
                             <div class="port-symbol">
-                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="8" width="16" height="8" rx="4"/><path d="M12 4v4m0 8v4"/></svg>
+                                <svg width="22" height="22" viewBox="0 0 16 16" fill="currentColor">
+                                    <path d="M3.5 7.5a.5.5 0 0 0 0 1h9a.5.5 0 0 0 0-1z"/>
+                                    <path d="M0 8a3 3 0 0 1 3-3h10a3 3 0 1 1 0 6H3a3 3 0 0 1-3-3m3-2a2 2 0 1 0 0 4h10a2 2 0 1 0 0-4z"/>
+                                </svg>
                             </div>
                             <div class="port-chip-info">
                                 <div class="port-chip-title-row">
-                                    <span class="port-chip-name">2. Cổng Type-C / TB4 (Ở giữa)</span>
+                                    <span class="port-chip-name">2. Cổng Type-C / Thunderbolt 4 (Ở giữa)</span>
+                                    {active_tag_right_c}
                                 </div>
-                                <span class="port-chip-spec">Thunderbolt 4 (40 Gbps) • USB-PD 100W</span>
+                                <span class="port-chip-spec">TB4 (40 Gbps) • Vào: Sạc PD 100W • Ra: Cấp nguồn 15W, Xuất hình 6K 60Hz</span>
                             </div>
                         </div>
 
+                        <!-- Port 3: SD Card Slot -->
                         <div class="port-chip">
                             <div class="port-symbol">
-                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="5" y="4" width="14" height="16" rx="2"/><path d="M9 4v4h6V4"/></svg>
+                                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                    <path d="M7 21h10a2 2 0 0 0 2 -2v-14a2 2 0 0 0 -2 -2h-6.172a2 2 0 0 0 -1.414 .586l-3.828 3.828a2 2 0 0 0 -.586 1.414v10.172a2 2 0 0 0 2 2"/>
+                                    <path d="M13 6v2"/>
+                                    <path d="M16 6v2"/>
+                                    <path d="M10 7v1"/>
+                                </svg>
                             </div>
                             <div class="port-chip-info">
                                 <div class="port-chip-title-row">
                                     <span class="port-chip-name">3. Khe cắm thẻ nhớ SDXC (Trước)</span>
                                 </div>
-                                <span class="port-chip-spec">Chuẩn UHS-II tốc độ cao (Không tiếp điện)</span>
+                                <span class="port-chip-spec">Chuẩn UHS-II tốc độ cao 312 MB/s (Truyền dữ liệu, không tiếp điện)</span>
                             </div>
                         </div>
                     </div>
@@ -1644,6 +1859,98 @@ def generate_html(data):
             return `${{h}}h : ${{String(m).padStart(2, '0')}}m : ${{String(s).padStart(2, '0')}}s`;
         }}
 
+        // Auto preserve & restore scroll position seamlessly across reloads
+        (function() {{
+            const scrollKey = 'batflow_scroll_y';
+            const saved = sessionStorage.getItem(scrollKey);
+            if (saved !== null) {{
+                const y = parseInt(saved, 10);
+                if (!isNaN(y) && y > 0) {{
+                    window.scrollTo(0, y);
+                    requestAnimationFrame(() => {{
+                        window.scrollTo(0, y);
+                    }});
+                }}
+            }}
+            window.addEventListener('scroll', () => {{
+                sessionStorage.setItem(scrollKey, window.scrollY);
+            }}, {{ passive: true }});
+        }})();
+
+        function triggerCheckUpdate() {{
+            if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.batflow) {{
+                window.webkit.messageHandlers.batflow.postMessage({{ action: "checkUpdate" }});
+            }}
+        }}
+
+        function triggerRefresh() {{
+            const btn = document.getElementById('btn-sync');
+            if (btn) {{
+                btn.classList.add('loading');
+                btn.innerHTML = '<svg class="spin-icon" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/></svg> Đang làm mới...';
+            }}
+            if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.batflow) {{
+                window.webkit.messageHandlers.batflow.postMessage({{ action: "refresh" }});
+            }} else {{
+                location.reload();
+            }}
+        }}
+        window.setRefreshLoading = function(isLoading) {{
+            const btn = document.getElementById('btn-sync');
+            if (!btn) return;
+            if (isLoading) {{
+                btn.classList.add('loading');
+                btn.innerHTML = '<svg class="spin-icon" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/></svg> Đang làm mới...';
+            }}
+        }};
+
+        window.applyPowerState = function(state) {{
+            const magsafeChip = document.getElementById('port-chip-magsafe');
+            const magsafeTag = document.getElementById('port-tag-magsafe');
+            const c1Chip = document.getElementById('port-chip-left-c1');
+            const c1Tag = document.getElementById('port-tag-left-c1');
+            const heroStatus = document.getElementById('hero-status-capsule');
+            const heroText = document.getElementById('hero-status-text');
+            const heroPct = document.querySelector('.pct-number');
+            const batFill = document.querySelector('.battery-bar-fill');
+            
+            if (heroPct && state.percent) heroPct.innerText = state.percent + '%';
+            if (batFill && state.percent) batFill.style.width = state.percent + '%';
+
+            if (state.isExtConnected) {{
+                if (state.isMagSafe) {{
+                    if (magsafeChip) magsafeChip.classList.add('port-chip-active');
+                    if (magsafeTag) magsafeTag.style.display = 'inline-flex';
+                    if (c1Chip) c1Chip.classList.remove('port-chip-active');
+                    if (c1Tag) c1Tag.style.display = 'none';
+                }} else {{
+                    if (c1Chip) c1Chip.classList.add('port-chip-active');
+                    if (c1Tag) c1Tag.style.display = 'inline-flex';
+                    if (magsafeChip) magsafeChip.classList.remove('port-chip-active');
+                    if (magsafeTag) magsafeTag.style.display = 'none';
+                }}
+                if (heroStatus) {{
+                    heroStatus.className = 'status-capsule ' + (state.isCharging ? 'status-charging' : 'status-discharging');
+                    if (heroText) {{
+                        if (state.isCharging) {{
+                            heroText.innerText = 'Đang sạc pin';
+                        }} else {{
+                            heroText.innerText = (state.percent >= 99) ? 'Nguồn điện Adapter (Đầy)' : 'Nguồn Adapter (Tạm dừng sạc)';
+                        }}
+                    }}
+                }}
+            }} else {{
+                if (magsafeChip) magsafeChip.classList.remove('port-chip-active');
+                if (magsafeTag) magsafeTag.style.display = 'none';
+                if (c1Chip) c1Chip.classList.remove('port-chip-active');
+                if (c1Tag) c1Tag.style.display = 'none';
+                if (heroStatus) {{
+                    heroStatus.className = 'status-capsule status-discharging';
+                    if (heroText) heroText.innerText = 'Đang dùng pin (Xả pin)';
+                }}
+            }}
+        }};
+
         setInterval(() => {{
             sessSec += 1;
             totalSec += 1;
@@ -1666,23 +1973,29 @@ def generate_html(data):
     return html_out
 
 def main():
-    data = get_battery_and_processes()
-    html_content = generate_html(data)
-    
+    report_path = None
+    custom_health = None
     if len(sys.argv) > 1 and sys.argv[1]:
         report_path = sys.argv[1]
     else:
         app_support = os.path.expanduser('~/Library/Application Support/BatFlow')
         os.makedirs(app_support, exist_ok=True)
         report_path = os.path.join(app_support, 'battery_report.html')
+
+    if len(sys.argv) > 2 and sys.argv[2]:
+        try:
+            custom_health = int(sys.argv[2])
+        except:
+            pass
+    
+    data = get_battery_and_processes(custom_apple_health=custom_health)
+    html_content = generate_html(data)
     
     os.makedirs(os.path.dirname(report_path), exist_ok=True)
     with open(report_path, 'w', encoding='utf-8') as f:
         f.write(html_content)
-
     try:
-        with open('/tmp/battery_report.html', 'w', encoding='utf-8') as f:
-            f.write(html_content)
+        os.chmod(report_path, 0o600)
     except:
         pass
 

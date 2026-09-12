@@ -3,13 +3,13 @@
 <plist version="1.0">
 <dict>
 	<key>CFBundleDisplayName</key>
-	<string>BatFlow</string>
+	<string>BatFlow (macOS 11 Big Sur)</string>
 	<key>CFBundleExecutable</key>
 	<string>BatFlow</string>
 	<key>CFBundleIconFile</key>
 	<string>applet.icns</string>
 	<key>CFBundleIdentifier</key>
-	<string>com.tulietech.batflow</string>
+	<string>com.tulietech.batflow.legacy</string>
 	<key>CFBundleName</key>
 	<string>BatFlow</string>
 	<key>CFBundlePackageType</key>
@@ -23,7 +23,7 @@
 	<key>LSApplicationCategoryType</key>
 	<string>public.app-category.utilities</string>
 	<key>LSMinimumSystemVersion</key>
-	<string>12.0</string>
+	<string>11.0</string>
 	<key>LSUIElement</key>
 	<true/>
 	<key>NSHighResolutionCapable</key>

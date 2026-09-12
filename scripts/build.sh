@@ -15,13 +15,19 @@ cp "$DIR/resources/Info.plist" "$APP_PATH/Contents/"
 cp "$DIR/resources/applet.icns" "$APP_PATH/Contents/Resources/"
 cp "$DIR/resources/battery_icon.png" "$APP_PATH/Contents/Resources/"
 cp "$DIR/src/generate_report.py" "$APP_PATH/Contents/Resources/"
+python3 "$DIR/src/generate_report.py" "$APP_PATH/Contents/Resources/battery_report.html" 100 || true
+
+# Find all Swift modular files (ensuring main.swift is included)
+SWIFT_FILES=$(find "$DIR/src" -name "*.swift" -type f | sort)
 
 # Compile Swift Binary with optimization
 swiftc -O \
     -framework SwiftUI \
     -framework AppKit \
     -framework WebKit \
-    "$DIR/src/BatFlow.swift" \
+    -framework IOKit \
+    -framework UserNotifications \
+    $SWIFT_FILES \
     -o "$APP_PATH/Contents/MacOS/BatFlow"
 
 touch "$APP_PATH"
