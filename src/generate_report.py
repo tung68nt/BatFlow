@@ -674,9 +674,6 @@ def generate_html(data):
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>BatFlow • Báo Cáo Phân Tích Dòng Điện & Pin</title>
     <link rel="icon" type="image/png" href="data:image/png;base64,{icon_b64}">
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <style>
         :root {{
             --bg: #F5F5F7;
@@ -693,7 +690,7 @@ def generate_html(data):
             --apple-blue: #0071E3;
             --apple-orange: #FF9500;
             --apple-red: #FF3B30;
-            --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'SF Pro Text', sans-serif;
+            --font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "Helvetica Neue", system-ui, sans-serif;
         }}
         @media (prefers-color-scheme: dark) {{
             :root {{
@@ -1995,7 +1992,7 @@ def main():
     with open(report_path, 'w', encoding='utf-8') as f:
         f.write(html_content)
     try:
-        os.chmod(report_path, 0o600)
+        os.chmod(report_path, 0o644)
     except:
         pass
 

@@ -16,6 +16,8 @@ cp "$DIR/resources/applet.icns" "$APP_PATH/Contents/Resources/"
 cp "$DIR/resources/battery_icon.png" "$APP_PATH/Contents/Resources/"
 cp "$DIR/src/generate_report.py" "$APP_PATH/Contents/Resources/"
 python3 "$DIR/src/generate_report.py" "$APP_PATH/Contents/Resources/battery_report.html" 100 || true
+chmod 644 "$APP_PATH/Contents/Resources/battery_report.html" 2>/dev/null || true
+chmod 644 "$APP_PATH/Contents/Resources/generate_report.py" 2>/dev/null || true
 
 # Find all Swift modular files (ensuring main.swift is included)
 SWIFT_FILES=$(find "$DIR/src" -name "*.swift" -type f | sort)

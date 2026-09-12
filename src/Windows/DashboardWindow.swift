@@ -15,8 +15,9 @@ class SafeWebNavDelegate: NSObject, WKNavigationDelegate, WKUIDelegate {
             return
         }
 
-        // Open external web links (http, https) safely in user's default browser
-        if let scheme = url.scheme?.lowercased(), scheme == "http" || scheme == "https" {
+        // Open external web links (http, https) safely in user's default browser ONLY when user clicks a link
+        if navigationAction.navigationType == .linkActivated,
+           let scheme = url.scheme?.lowercased(), (scheme == "http" || scheme == "https") {
             decisionHandler(.cancel)
             NSWorkspace.shared.open(url)
             return
@@ -140,16 +141,18 @@ class DashboardWindowController: NSObject {
         let reportURL = DashboardWindowController.reportHTMLURL
 
         // 1. Try loading freshly generated report from Application Support
-        if FileManager.default.fileExists(atPath: reportURL.path),
-           let html = try? String(contentsOf: reportURL, encoding: .utf8), !html.isEmpty {
-            wv.loadHTMLString(html, baseURL: reportURL)
-            return
+        if FileManager.default.fileExists(atPath: reportURL.path) {
+            try? FileManager.default.setAttributes([.posixPermissions: 0o644], ofItemAtPath: reportURL.path)
+            if let html = try? String(contentsOf: reportURL, encoding: .utf8), !html.isEmpty {
+                wv.loadHTMLString(html, baseURL: nil)
+                return
+            }
         }
 
         // 2. Try loading pre-bundled fallback report template from Resources
         if let bundleURL = Bundle.main.url(forResource: "battery_report", withExtension: "html"),
            let html = try? String(contentsOf: bundleURL, encoding: .utf8), !html.isEmpty {
-            wv.loadHTMLString(html, baseURL: bundleURL)
+            wv.loadHTMLString(html, baseURL: nil)
             return
         }
 
@@ -207,9 +210,10 @@ class DashboardWindowController: NSObject {
     func open(with model: BatteryViewModel) {
         self.modelProvider = model
 
-        if let win = window {
+        if let win = window, let wv = webView {
             win.makeKeyAndOrderFront(nil)
             NSApp.activate(ignoringOtherApps: true)
+            loadReportHTML(into: wv)
             refresh()
             return
         }
@@ -224,7 +228,8 @@ class DashboardWindowController: NSObject {
         win.center()
         win.isReleasedWhenClosed = false
         win.minSize = NSSize(width: 720, height: 500)
-        win.backgroundColor = NSColor(red: 0.09, green: 0.09, blue: 0.10, alpha: 1.0)
+        let darkBg = NSColor(red: 0.09, green: 0.09, blue: 0.10, alpha: 1.0)
+        win.backgroundColor = darkBg
 
         let config = WKWebViewConfiguration()
         let userContent = WKUserContentController()
@@ -232,22 +237,28 @@ class DashboardWindowController: NSObject {
         userContent.add(handler, name: "batflow")
         config.userContentController = userContent
 
-        let wv = WKWebView(frame: win.contentView!.bounds, configuration: config)
+        let wv = WKWebView(frame: win.contentView?.bounds ?? NSRect(x: 0, y: 0, width: 940, height: 750), configuration: config)
         wv.autoresizingMask = [.width, .height]
         wv.navigationDelegate = webNavDelegate
         wv.uiDelegate = webNavDelegate
+        if #available(macOS 12.0, *) {
+            wv.underPageBackgroundColor = darkBg
+        }
         wv.setValue(false, forKey: "drawsBackground")
 
-        // Immediately load report or placeholder so window is NEVER blank
-        loadReportHTML(into: wv)
-
+        // 1. Attach view hierarchy first so WebKit has active window & renderer backing
         win.contentView = wv
         self.webView = wv
         self.window = win
 
+        // 2. Bring window front
         win.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
 
+        // 3. Immediately load cached report, pre-bundled fallback, or dark placeholder
+        loadReportHTML(into: wv)
+
+        // 4. Trigger fresh background hardware data generation
         refresh()
 
         // Auto-refresh timer when dashboard is open (every 60 seconds)
@@ -286,6 +297,7 @@ class DashboardWindowController: NSObject {
             proc.terminationHandler = { [weak self, weak wv] _ in
                 DispatchQueue.main.async {
                     if let self = self, let wv = wv {
+                        try? FileManager.default.setAttributes([.posixPermissions: 0o644], ofItemAtPath: reportURL.path)
                         self.loadReportHTML(into: wv)
                     }
                 }

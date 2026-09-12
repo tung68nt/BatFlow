@@ -89,6 +89,16 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         if !FileManager.default.fileExists(atPath: appSupportReport.path) {
             if let bundleHTML = Bundle.main.url(forResource: "battery_report", withExtension: "html") {
                 try? FileManager.default.copyItem(at: bundleHTML, to: appSupportReport)
+                try? FileManager.default.setAttributes([.posixPermissions: 0o644], ofItemAtPath: appSupportReport.path)
+            }
+        } else {
+            try? FileManager.default.setAttributes([.posixPermissions: 0o644], ofItemAtPath: appSupportReport.path)
+        }
+
+        // 7. Support direct dashboard open flag for CLI and testing
+        if CommandLine.arguments.contains("--dashboard") {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
+                self?.openDetailedDashboard()
             }
         }
     }

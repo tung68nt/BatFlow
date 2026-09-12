@@ -33,6 +33,8 @@ cp "$DIR/resources/applet.icns" "$LEGACY_APP_PATH/Contents/Resources/"
 cp "$DIR/resources/battery_icon.png" "$LEGACY_APP_PATH/Contents/Resources/"
 cp "$DIR/src/generate_report.py" "$LEGACY_APP_PATH/Contents/Resources/"
 python3 "$DIR/src/generate_report.py" "$LEGACY_APP_PATH/Contents/Resources/battery_report.html" 100 || true
+chmod 644 "$LEGACY_APP_PATH/Contents/Resources/battery_report.html" 2>/dev/null || true
+chmod 644 "$LEGACY_APP_PATH/Contents/Resources/generate_report.py" 2>/dev/null || true
 
 SWIFT_FILES=$(find "$DIR/src" -name "*.swift" -type f | sort)
 
