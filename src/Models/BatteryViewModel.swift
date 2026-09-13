@@ -272,8 +272,14 @@ class BatteryViewModel: ObservableObject {
                         }
                     }
 
-                    if let cData = dict["ChargerData"] as? [String: Any] {
-                        if let w = self.doubleVal(cData["Watts"]) { targetWatts = w }
+                    if let aDetails = dict["AdapterDetails"] as? [String: Any] {
+                        if let w = self.doubleVal(aDetails["Watts"]), w > 0 { targetWatts = w }
+                    } else if let rawDetails = dict["AppleRawAdapterDetails"] as? [[String: Any]], let first = rawDetails.first {
+                        if let w = self.doubleVal(first["Watts"]), w > 0 { targetWatts = w }
+                    } else if let rawDetailsDict = dict["AppleRawAdapterDetails"] as? [String: Any] {
+                        if let w = self.doubleVal(rawDetailsDict["Watts"]), w > 0 { targetWatts = w }
+                    } else if let cData = dict["ChargerData"] as? [String: Any] {
+                        if let w = self.doubleVal(cData["Watts"]), w > 0 { targetWatts = w }
                         if let chg = self.boolVal(cData["IsCharging"]) { targetCharging = chg }
                     }
                     
@@ -304,15 +310,19 @@ class BatteryViewModel: ObservableObject {
             }
             let targetSysLoad = round(sysLoadRaw * 10.0) / 10.0
 
+            if targetExtConnected && targetWatts <= 0 {
+                targetWatts = max(targetSysLoad + targetNetWatts, 20.0)
+            }
+
             var targetPowerStr = "Dùng pin"
             if targetExtConnected {
                 let isMagSafe = self.isMagSafeActive()
-                let portName = isMagSafe ? "MagSafe 3" : "Type-C"
+                let portName = isMagSafe ? self.detectMagSafeType() : "Type-C"
                 let wInt = Int(round(targetWatts))
                 if targetCharging {
-                    targetPowerStr = "Cổng \(portName) (\(wInt)W)"
+                    targetPowerStr = wInt > 0 ? "Cổng \(portName) (\(wInt)W)" : "Cổng \(portName)"
                 } else {
-                    targetPowerStr = "Nguồn ngoài (\(portName) \(wInt)W)"
+                    targetPowerStr = wInt > 0 ? "Nguồn ngoài (\(portName) \(wInt)W)" : "Nguồn ngoài (\(portName))"
                 }
             }
 
@@ -352,36 +362,107 @@ class BatteryViewModel: ObservableObject {
     }
 
     func isMagSafeActive() -> Bool {
-        var iterator: io_iterator_t = 0
         let mainPort: mach_port_t
         if #available(macOS 12.0, *) {
             mainPort = kIOMainPortDefault
         } else {
             mainPort = kIOMasterPortDefault
         }
-        guard IOServiceGetMatchingServices(mainPort, IOServiceMatching("AppleTCControllerType11"), &iterator) == KERN_SUCCESS else {
-            return false
-        }
-        defer { IOObjectRelease(iterator) }
-        var service = IOIteratorNext(iterator)
-        while service != 0 {
-            defer {
-                IOObjectRelease(service)
-                service = IOIteratorNext(iterator)
-            }
-            var props: Unmanaged<CFMutableDictionary>?
-            if IORegistryEntryCreateCFProperties(service, &props, kCFAllocatorDefault, 0) == KERN_SUCCESS,
-               let dict = props?.takeRetainedValue() as? [String: Any] {
-                if let desc = dict["PortDescription"] as? String, desc.contains("MagSafe") {
-                    if let active = dict["ConnectionActive"] as? Bool, active {
-                        return true
-                    }
-                    if let activeInt = dict["ConnectionActive"] as? Int, activeInt == 1 {
-                        return true
+
+        // 1. Check AppleTCControllerType11 (MagSafe 3 on Apple Silicon MacBook Pro 14/16, Air M2/M3)
+        var iterator: io_iterator_t = 0
+        if IOServiceGetMatchingServices(mainPort, IOServiceMatching("AppleTCControllerType11"), &iterator) == KERN_SUCCESS {
+            defer { IOObjectRelease(iterator) }
+            var service = IOIteratorNext(iterator)
+            while service != 0 {
+                defer {
+                    IOObjectRelease(service)
+                    service = IOIteratorNext(iterator)
+                }
+                var props: Unmanaged<CFMutableDictionary>?
+                if IORegistryEntryCreateCFProperties(service, &props, kCFAllocatorDefault, 0) == KERN_SUCCESS,
+                   let dict = props?.takeRetainedValue() as? [String: Any] {
+                    if let desc = dict["PortDescription"] as? String, desc.contains("MagSafe") {
+                        if (dict["ConnectionActive"] as? Bool == true) || (dict["ConnectionActive"] as? Int == 1) {
+                            return true
+                        }
                     }
                 }
             }
         }
+
+        // 2. Check AppleTCController base class for MagSafe entry
+        var tcIterator: io_iterator_t = 0
+        if IOServiceGetMatchingServices(mainPort, IOServiceMatching("AppleTCController"), &tcIterator) == KERN_SUCCESS {
+            defer { IOObjectRelease(tcIterator) }
+            var s = IOIteratorNext(tcIterator)
+            while s != 0 {
+                defer {
+                    IOObjectRelease(s)
+                    s = IOIteratorNext(tcIterator)
+                }
+                var props: Unmanaged<CFMutableDictionary>?
+                if IORegistryEntryCreateCFProperties(s, &props, kCFAllocatorDefault, 0) == KERN_SUCCESS,
+                   let dict = props?.takeRetainedValue() as? [String: Any] {
+                    if let desc = dict["PortDescription"] as? String, desc.contains("MagSafe") {
+                        if (dict["ConnectionActive"] as? Bool == true) || (dict["ConnectionActive"] as? Int == 1) {
+                            return true
+                        }
+                    }
+                }
+            }
+        }
+
+        // 3. Check AppleSmartBattery AdapterDetails for MagSafe 2 / MagSafe 1 (Intel Macs on Big Sur)
+        let bService = IOServiceGetMatchingService(mainPort, IOServiceMatching("AppleSmartBattery"))
+        if bService != 0 {
+            defer { IOObjectRelease(bService) }
+            var props: Unmanaged<CFMutableDictionary>?
+            if IORegistryEntryCreateCFProperties(bService, &props, kCFAllocatorDefault, 0) == KERN_SUCCESS,
+               let dict = props?.takeRetainedValue() as? [String: Any] {
+                let name: String
+                if let aDetails = dict["AdapterDetails"] as? [String: Any] {
+                    name = (aDetails["Name"] as? String ?? "") + " " + (aDetails["Description"] as? String ?? "")
+                } else if let rawDetails = dict["AppleRawAdapterDetails"] as? [[String: Any]], let first = rawDetails.first {
+                    name = (first["Name"] as? String ?? "") + " " + (first["Description"] as? String ?? "")
+                } else {
+                    name = ""
+                }
+                if name.localizedCaseInsensitiveContains("magsafe") {
+                    return true
+                }
+            }
+        }
+
         return false
+    }
+
+    func detectMagSafeType() -> String {
+        let mainPort: mach_port_t
+        if #available(macOS 12.0, *) {
+            mainPort = kIOMainPortDefault
+        } else {
+            mainPort = kIOMasterPortDefault
+        }
+
+        var iterator: io_iterator_t = 0
+        if IOServiceGetMatchingServices(mainPort, IOServiceMatching("AppleTCControllerType11"), &iterator) == KERN_SUCCESS {
+            IOObjectRelease(iterator)
+            return "MagSafe 3"
+        }
+
+        let bService = IOServiceGetMatchingService(mainPort, IOServiceMatching("AppleSmartBattery"))
+        if bService != 0 {
+            defer { IOObjectRelease(bService) }
+            var props: Unmanaged<CFMutableDictionary>?
+            if IORegistryEntryCreateCFProperties(bService, &props, kCFAllocatorDefault, 0) == KERN_SUCCESS,
+               let dict = props?.takeRetainedValue() as? [String: Any] {
+                let name = ((dict["AdapterDetails"] as? [String: Any])?["Name"] as? String) ?? ""
+                if name.contains("MagSafe 2") {
+                    return "MagSafe 2"
+                }
+            }
+        }
+        return "MagSafe"
     }
 }

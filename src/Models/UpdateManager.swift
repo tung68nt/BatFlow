@@ -431,23 +431,47 @@ class UpdateManager: NSObject, ObservableObject, URLSessionDownloadDelegate {
             guard let self = self else { return }
             
             let mountPoint = "/Volumes/BatFlow_Update_\(UUID().uuidString.prefix(6))"
-            let targetAppPath = "/Applications/BatFlow.app"
+            let isBigSur = ProcessInfo.processInfo.operatingSystemVersion.majorVersion < 12
+            
+            // 1. Identify target app path
+            let currentAppURL = Bundle.main.bundleURL
+            let targetAppPath: String
+            if currentAppURL.path.hasPrefix("/Applications") {
+                targetAppPath = currentAppURL.path
+            } else {
+                let defaultName = isBigSur ? "BatFlow (macOS 11 Big Sur).app" : "BatFlow.app"
+                targetAppPath = "/Applications/\(defaultName)"
+            }
 
-            // 1. Mount DMG silently
+            // 2. Mount DMG silently
             let mountProc = Process()
             mountProc.executableURL = URL(fileURLWithPath: "/usr/bin/hdiutil")
             mountProc.arguments = ["attach", dmgURL.path, "-mountpoint", mountPoint, "-nobrowse", "-quiet", "-noautoopen"]
             try? mountProc.run()
             mountProc.waitUntilExit()
 
-            let sourceAppPath = "\(mountPoint)/BatFlow.app"
+            // 3. Match correct app version inside DMG
+            let legacySourcePath = "\(mountPoint)/BatFlow (macOS 11 Big Sur).app"
+            let standardSourcePath = "\(mountPoint)/BatFlow.app"
+            
+            let chosenSourcePath: String
+            if isBigSur && FileManager.default.fileExists(atPath: legacySourcePath) {
+                chosenSourcePath = legacySourcePath
+            } else if FileManager.default.fileExists(atPath: standardSourcePath) {
+                chosenSourcePath = standardSourcePath
+            } else if FileManager.default.fileExists(atPath: legacySourcePath) {
+                chosenSourcePath = legacySourcePath
+            } else {
+                chosenSourcePath = ""
+            }
+
             var installedSuccess = false
 
-            if FileManager.default.fileExists(atPath: sourceAppPath) {
+            if !chosenSourcePath.isEmpty && FileManager.default.fileExists(atPath: chosenSourcePath) {
                 let replaceScript = """
                 sleep 0.8
                 rm -rf "\(targetAppPath)"
-                cp -R "\(sourceAppPath)" "\(targetAppPath)"
+                cp -R "\(chosenSourcePath)" "\(targetAppPath)"
                 /usr/bin/hdiutil detach "\(mountPoint)" -quiet || true
                 open "\(targetAppPath)"
                 """
@@ -474,7 +498,7 @@ class UpdateManager: NSObject, ObservableObject, URLSessionDownloadDelegate {
             }
 
             if !installedSuccess {
-                // Fallback: Open DMG directly in Finder
+                // Fallback: Open DMG directly in Finder for manual drag-and-drop
                 DispatchQueue.main.async {
                     NSWorkspace.shared.open(dmgURL)
                     self.status = .readyToInstall(fileURL: dmgURL)
@@ -500,20 +524,29 @@ class UpdateManager: NSObject, ObservableObject, URLSessionDownloadDelegate {
         
         try? FileManager.default.removeItem(at: destinationURL)
         do {
-            try FileManager.default.moveItem(at: location, to: destinationURL)
+            try FileManager.default.copyItem(at: location, to: destinationURL)
             DispatchQueue.main.async {
                 self.downloadedFileURL = destinationURL
                 self.status = .readyToInstall(fileURL: destinationURL)
             }
         } catch {
-            DispatchQueue.main.async {
-                self.handleError("Không thể lưu file DMG: \(error.localizedDescription)", userInitiated: true)
+            do {
+                try FileManager.default.moveItem(at: location, to: destinationURL)
+                DispatchQueue.main.async {
+                    self.downloadedFileURL = destinationURL
+                    self.status = .readyToInstall(fileURL: destinationURL)
+                }
+            } catch {
+                DispatchQueue.main.async {
+                    self.handleError("Không thể lưu file DMG: \(error.localizedDescription)", userInitiated: true)
+                }
             }
         }
     }
 
     func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
         if let error = error {
+            if (error as NSError).code == NSURLErrorCancelled { return }
             DispatchQueue.main.async {
                 self.handleError("Tải về thất bại: \(error.localizedDescription)", userInitiated: true)
             }

@@ -1,10 +1,10 @@
 {
-  "version": "1.0.1",
-  "build": "2026.09.12",
-  "title": "BatFlow v1.0.1 • Bản Vá Lỗi Màn Hình Trắng macOS 11 & Tích Hợp Check For Update",
-  "releaseNotes": "• Sửa triệt để lỗi cửa sổ Dashboard bị trắng trơn trên macOS 11 Big Sur và khi mở từ DMG\n• Nhúng sẵn battery_report.html vào Bundle Resources để mở tức thì trong 0.01s\n• Chuyển cơ chế nạp WebKit sang loadHTMLString an toàn tuyệt đối\n• Tích hợp tính năng Check for Update tự động kiểm tra bản mới ngầm và thông báo native\n• Thêm nút 'Kiểm tra bản mới' ngay trên Header của Dashboard Report và Popover Menu Bar\n• Đóng gói bộ cài DMG đa phiên bản: hỗ trợ macOS 12+ (Monterey, Ventura, Sonoma, Sequoia) và macOS 11 (Big Sur)",
-  "downloadUrl": "https://github.com/tung68nt/BatFlow/releases/download/v1.0.1/BatFlow-v1.0.1.dmg",
-  "publishedAt": "2026-09-12",
+  "version": "1.0.2",
+  "build": "2026.09.13",
+  "title": "BatFlow v1.0.2 • Nhận Diện Chuẩn Cổng Sạc & Sửa Lỗi Tự Động Cập Nhật",
+  "releaseNotes": "• Nhận diện chuẩn xác 100% cổng sạc (MagSafe 3, MagSafe 2, Type-C Thunderbolt) trên mọi dòng máy Mac\n• Tự động thích ứng sơ đồ khung máy theo model thiết bị (MacBook Air 2 cổng, MacBook Pro 13 inch, MacBook Pro 14/16 inch, Intel Mac)\n• Hiển thị động tên thiết bị thực tế (MacBook Air, MacBook Pro...) và cấu hình chip, RAM\n• Khắc phục triệt để lỗi cập nhật phần mềm tự động (Auto Update) trên macOS 11 Big Sur\n• Tự động chọn đúng phiên bản app tương thích kiến trúc hệ điều hành khi nâng cấp từ DMG\n• Bổ sung hỗ trợ đọc công suất củ sạc trên các dòng máy Intel và Big Sur không có ChargerData",
+  "downloadUrl": "https://github.com/tung68nt/BatFlow/releases/download/v1.0.2/BatFlow-v1.0.2.dmg",
+  "publishedAt": "2026-09-13",
   "minOSVersion": "11.0",
-  "fileSize": "3.8 MB"
+  "fileSize": "3.9 MB"
 }

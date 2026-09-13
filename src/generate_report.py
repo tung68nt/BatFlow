@@ -71,8 +71,43 @@ def get_battery_and_processes(custom_apple_health=None):
     else:
         adapter_in_w = 0.0
 
-    # Detect active port: check if MagSafe 3 is physically connected via AppleTCControllerType11
+    # Detect Mac hardware model to adapt chassis schematic and port layout
+    try:
+        hw_model = subprocess.check_output(['sysctl', '-n', 'hw.model'], timeout=0.5).decode('utf-8').strip()
+    except:
+        hw_model = 'MacBookPro18,3'
+
+    device_model_name = "MacBook"
+    try:
+        dt_out = subprocess.check_output(['ioreg', '-p', 'IODeviceTree', '-r', '-k', 'product-name'], timeout=0.5, text=True, errors='replace')
+        m_name = re.search(r'"product-name"\s*=\s*<"([^"]+)">', dt_out)
+        if m_name:
+            device_model_name = m_name.group(1)
+        else:
+            m_desc = re.search(r'"product-description"\s*=\s*<"([^"]+)">', dt_out)
+            if m_desc:
+                device_model_name = m_desc.group(1)
+    except:
+        pass
+    if device_model_name == "MacBook":
+        device_model_name = "MacBook Air" if "Air" in hw_model else ("MacBook Pro" if "Pro" in hw_model else hw_model)
+
+    try:
+        chip_name = subprocess.check_output(['sysctl', '-n', 'machdep.cpu.brand_string'], text=True, timeout=0.5).strip()
+    except:
+        chip_name = 'Apple Silicon'
+    try:
+        mem_bytes = int(subprocess.check_output(['sysctl', '-n', 'hw.memsize'], text=True, timeout=0.5).strip())
+        mem_gb = mem_bytes // (1024**3)
+    except:
+        mem_gb = 16
+    device_spec_str = f"{chip_name} • Bộ nhớ {mem_gb} GB"
+
+    # Detect active port: check MagSafe 3, MagSafe 2, or Type-C
     is_magsafe_active = False
+    magsafe_name = "MagSafe 3"
+
+    # 1. Check AppleTCControllerType11 (MagSafe 3 on modern Apple Silicon)
     try:
         tc_bytes = subprocess.check_output(['ioreg', '-r', '-c', 'AppleTCControllerType11', '-a'], timeout=0.8)
         tc_pl = plistlib.loads(tc_bytes)
@@ -81,9 +116,46 @@ def get_battery_and_processes(custom_apple_health=None):
             active = item.get('ConnectionActive', False)
             if 'MagSafe' in desc and (active is True or active == 1):
                 is_magsafe_active = True
+                magsafe_name = "MagSafe 3"
                 break
     except:
         pass
+
+    # 2. Check general AppleTCController for active ports and MagSafe
+    active_tc_ports = []
+    try:
+        tc_bytes2 = subprocess.check_output(['ioreg', '-r', '-c', 'AppleTCController', '-a'], timeout=0.8)
+        tc_pl2 = plistlib.loads(tc_bytes2)
+        for item in tc_pl2:
+            desc = item.get('PortDescription', '')
+            active = item.get('ConnectionActive', False)
+            if active is True or active == 1:
+                if 'MagSafe' in desc:
+                    is_magsafe_active = True
+                    magsafe_name = "MagSafe 3"
+                elif 'USB-C' in desc or 'Type-C' in desc:
+                    m = re.search(r'@(\d+)', desc)
+                    active_tc_ports.append(int(m.group(1)) if m else len(active_tc_ports) + 1)
+    except:
+        pass
+
+    # 3. Check AppleSmartBattery AdapterDetails for MagSafe 2 / MagSafe 1 (Intel Macs on Big Sur)
+    ac_name = ""
+    ac_desc = ""
+    if ac_details and isinstance(ac_details, list) and len(ac_details) > 0:
+        ac_name = str(ac_details[0].get('Name', ''))
+        ac_desc = str(ac_details[0].get('Description', ''))
+    elif isinstance(ac_details, dict):
+        ac_name = str(ac_details.get('Name', ''))
+        ac_desc = str(ac_details.get('Description', ''))
+
+    if 'magsafe 2' in ac_name.lower() or 'magsafe 2' in ac_desc.lower():
+        is_magsafe_active = True
+        magsafe_name = "MagSafe 2"
+    elif 'magsafe' in ac_name.lower() or 'magsafe' in ac_desc.lower():
+        is_magsafe_active = True
+        if magsafe_name != "MagSafe 3":
+            magsafe_name = "MagSafe"
 
     active_port_name = 'Chưa cắm sạc'
     port_protocol = 'Chưa kết nối nguồn ngoài'
@@ -91,13 +163,27 @@ def get_battery_and_processes(custom_apple_health=None):
     
     if ac_online:
         if is_magsafe_active:
-            active_port_name = 'Cổng MagSafe 3 (Sát bản lề)'
-            port_protocol = 'Chuẩn sạc từ tính MagSafe 3 (Apple Fast Charge)'
+            active_port_name = f'Cổng {magsafe_name} (Sát bản lề)'
+            port_protocol = f'Chuẩn sạc từ tính Apple {magsafe_name} (Apple Fast Charge)'
             active_port_id = 'magsafe'
         else:
-            active_port_name = f'Cổng Type-C ({adapter_rated_w}W)'
-            port_protocol = 'Chuẩn giao thức USB-Power Delivery (Thunderbolt 4 / USB-C)'
-            active_port_id = 'left_c1'
+            p_idx = active_tc_ports[0] if active_tc_ports else 1
+            if p_idx == 1:
+                active_port_id = 'left_c1'
+                active_port_name = f'Cổng Type-C số 1 ({adapter_rated_w}W)'
+            elif p_idx == 2:
+                active_port_id = 'left_c2'
+                active_port_name = f'Cổng Type-C số 2 ({adapter_rated_w}W)'
+            else:
+                active_port_id = 'right_c'
+                active_port_name = f'Cổng Type-C cạnh phải ({adapter_rated_w}W)'
+
+            if 'MacBookAir10' in hw_model or 'MacBookPro17' in hw_model:
+                port_protocol = 'Chuẩn giao thức USB-Power Delivery (Thunderbolt 3 / USB4)'
+            elif 'MacBookPro18' in hw_model or 'Mac14' in hw_model or 'Mac15' in hw_model or 'Mac16' in hw_model:
+                port_protocol = 'Chuẩn giao thức USB-Power Delivery (Thunderbolt 4 / USB-C)'
+            else:
+                port_protocol = 'Chuẩn giao thức USB-Power Delivery (Thunderbolt / USB-C)'
 
     # 3. Battery percentage matching macOS menu bar UI
     cur_cap = int(sb.get('CurrentCapacity') or 80)
@@ -299,6 +385,11 @@ def get_battery_and_processes(custom_apple_health=None):
         'active_port_name': active_port_name,
         'active_port_id': active_port_id,
         'port_protocol': port_protocol,
+        'hw_model': hw_model,
+        'magsafe_name': magsafe_name,
+        'is_magsafe_active': is_magsafe_active,
+        'device_model_name': device_model_name,
+        'device_spec_str': device_spec_str,
         'adapter_rated_w': adapter_rated_w,
         'adapter_in_w': round(adapter_in_w, 1),
         'sys_load_w': round(sys_load_w, 1),
@@ -656,6 +747,343 @@ def generate_html(data):
 
     active_tag_right_c = f'<span id="port-tag-right-c" class="port-chip-badge" style="display: {"inline-flex" if is_right_c_active else "none"};"><span class="badge-dot"></span>Đang sạc {adapter_w_int}W</span>'
     active_class_right_c = 'port-chip-active' if is_right_c_active else ''
+
+    # Generate model-specific hardware chassis schematic
+    hw_model = data.get('hw_model', '')
+    magsafe_name = data.get('magsafe_name', 'MagSafe 3')
+    
+    is_two_port = ('MacBookAir10' in hw_model or 'MacBookAir9' in hw_model or 'MacBookAir8' in hw_model or 
+                   'MacBookPro17,1' in hw_model or 'Mac14,7' in hw_model or 'MacBookPro16,3' in hw_model or 
+                   'MacBookPro15,4' in hw_model or 'MacBookPro14,1' in hw_model or 'MacBookPro13,1' in hw_model)
+    is_magsafe2 = ('MacBookPro11' in hw_model or 'MacBookPro12' in hw_model or 
+                   'MacBookAir7' in hw_model or 'MacBookAir6' in hw_model or magsafe_name == 'MagSafe 2')
+    is_four_port_intel = ('MacBookPro16,1' in hw_model or 'MacBookPro16,2' in hw_model or 
+                          'MacBookPro15,1' in hw_model or 'MacBookPro15,2' in hw_model or 
+                          'MacBookPro15,3' in hw_model or 'MacBookPro14,2' in hw_model or 
+                          'MacBookPro14,3' in hw_model or 'MacBookPro13,2' in hw_model)
+
+    if is_two_port:
+        hardware_schematic_html = f"""
+            <div class="hardware-schematic">
+                <!-- Left Edge Panel (2 USB-C / Thunderbolt Ports) -->
+                <div class="chassis-panel">
+                    <div class="chassis-header">
+                        <span class="chassis-title">Cạnh trái máy (Từ bản lề ra trước)</span>
+                        <span class="chassis-badge">2 cổng sạc & dữ liệu</span>
+                    </div>
+                    <div class="port-list">
+                        <!-- Port 1: Type-C 1 -->
+                        <div id="port-chip-left-c1" class="port-chip {active_class_left_c1}">
+                            <div class="port-symbol">
+                                <svg width="22" height="22" viewBox="0 0 16 16" fill="currentColor">
+                                    <path d="M3.5 7.5a.5.5 0 0 0 0 1h9a.5.5 0 0 0 0-1z"/>
+                                    <path d="M0 8a3 3 0 0 1 3-3h10a3 3 0 1 1 0 6H3a3 3 0 0 1-3-3m3-2a2 2 0 1 0 0 4h10a2 2 0 1 0 0-4z"/>
+                                </svg>
+                            </div>
+                            <div class="port-chip-info">
+                                <div class="port-chip-title-row">
+                                    <span class="port-chip-name">1. Cổng Type-C / Thunderbolt (Sát bản lề)</span>
+                                    {active_tag_left_c1}
+                                </div>
+                                <span class="port-chip-spec">Thunderbolt 3 / USB4 • Vào: Sạc PD {adapter_w_int}W • Ra: Cấp nguồn 15W, Xuất hình 6K</span>
+                            </div>
+                        </div>
+
+                        <!-- Port 2: Type-C 2 -->
+                        <div id="port-chip-left-c2" class="port-chip {active_class_left_c2}">
+                            <div class="port-symbol">
+                                <svg width="22" height="22" viewBox="0 0 16 16" fill="currentColor">
+                                    <path d="M3.5 7.5a.5.5 0 0 0 0 1h9a.5.5 0 0 0 0-1z"/>
+                                    <path d="M0 8a3 3 0 0 1 3-3h10a3 3 0 1 1 0 6H3a3 3 0 0 1-3-3m3-2a2 2 0 1 0 0 4h10a2 2 0 1 0 0-4z"/>
+                                </svg>
+                            </div>
+                            <div class="port-chip-info">
+                                <div class="port-chip-title-row">
+                                    <span class="port-chip-name">2. Cổng Type-C / Thunderbolt (Phía trước)</span>
+                                    {active_tag_left_c2}
+                                </div>
+                                <span class="port-chip-spec">Thunderbolt 3 / USB4 • Vào: Sạc PD {adapter_w_int}W • Ra: Cấp nguồn 15W, Xuất hình 6K</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Right Edge Panel (Audio Jack Only) -->
+                <div class="chassis-panel">
+                    <div class="chassis-header">
+                        <span class="chassis-title">Cạnh phải máy</span>
+                        <span class="chassis-badge">Âm thanh</span>
+                    </div>
+                    <div class="port-list">
+                        <!-- Port 1: 3.5mm Headphone Jack -->
+                        <div class="port-chip">
+                            <div class="port-symbol">
+                                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                    <path d="M3 14h3a2 2 0 0 1 2 2v3a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-7a9 9 0 0 1 18 0v7a2 2 0 0 1-2 2h-1a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2h3"/>
+                                </svg>
+                            </div>
+                            <div class="port-chip-info">
+                                <div class="port-chip-title-row">
+                                    <span class="port-chip-name">1. Jack âm thanh 3.5mm</span>
+                                </div>
+                                <span class="port-chip-spec">Đầu ra âm thanh analog • Tự nhận diện tai nghe</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        """
+    elif is_magsafe2:
+        hardware_schematic_html = f"""
+            <div class="hardware-schematic">
+                <!-- Left Edge Panel (MagSafe 2, TB2, USB, Jack) -->
+                <div class="chassis-panel">
+                    <div class="chassis-header">
+                        <span class="chassis-title">Cạnh trái máy (Từ bản lề ra trước)</span>
+                        <span class="chassis-badge">1 cổng sạc chính</span>
+                    </div>
+                    <div class="port-list">
+                        <!-- Port 1: MagSafe 2 -->
+                        <div id="port-chip-magsafe" class="port-chip {active_class_magsafe}">
+                            <div class="port-symbol">
+                                <svg width="20" height="20" viewBox="0 0 16 16" fill="currentColor">
+                                    <path d="M11.251.068a.5.5 0 0 1 .227.58L9.677 6.5H13a.5.5 0 0 1 .364.843l-8 8.5a.5.5 0 0 1-.842-.49L6.323 9.5H3a.5.5 0 0 1-.364-.843l8-8.5a.5.5 0 0 1 .615-.09z"/>
+                                </svg>
+                            </div>
+                            <div class="port-chip-info">
+                                <div class="port-chip-title-row">
+                                    <span class="port-chip-name">1. Cổng MagSafe 2 (Sát bản lề)</span>
+                                    {active_tag_magsafe}
+                                </div>
+                                <span class="port-chip-spec">Chuẩn sạc từ tính Apple MagSafe 2 ({adapter_w_int}W)</span>
+                            </div>
+                        </div>
+
+                        <!-- Port 2: Thunderbolt 2 -->
+                        <div class="port-chip">
+                            <div class="port-symbol">
+                                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+                            </div>
+                            <div class="port-chip-info">
+                                <div class="port-chip-title-row">
+                                    <span class="port-chip-name">2. Cổng Thunderbolt 2 (Mini DisplayPort)</span>
+                                </div>
+                                <span class="port-chip-spec">Tốc độ 20 Gbps • Xuất màn hình ngoại vi</span>
+                            </div>
+                        </div>
+
+                        <!-- Port 3: USB 3.0 -->
+                        <div class="port-chip">
+                            <div class="port-symbol">
+                                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="7" width="20" height="10" rx="2"/><path d="M6 11h2"/><path d="M16 11h2"/></svg>
+                            </div>
+                            <div class="port-chip-info">
+                                <div class="port-chip-title-row">
+                                    <span class="port-chip-name">3. Cổng USB 3.0 Type-A</span>
+                                </div>
+                                <span class="port-chip-spec">USB 5 Gbps • Cấp nguồn ngoại vi</span>
+                            </div>
+                        </div>
+
+                        <!-- Port 4: Jack 3.5mm -->
+                        <div class="port-chip">
+                            <div class="port-symbol">
+                                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 14h3a2 2 0 0 1 2 2v3a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-7a9 9 0 0 1 18 0v7a2 2 0 0 1-2 2h-1a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2h3"/></svg>
+                            </div>
+                            <div class="port-chip-info">
+                                <div class="port-chip-title-row">
+                                    <span class="port-chip-name">4. Jack âm thanh 3.5mm</span>
+                                </div>
+                                <span class="port-chip-spec">Đầu ra âm thanh analog</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Right Edge Panel (SD, HDMI, USB) -->
+                <div class="chassis-panel">
+                    <div class="chassis-header">
+                        <span class="chassis-title">Cạnh phải máy</span>
+                        <span class="chassis-badge">Dữ liệu & Xuất hình</span>
+                    </div>
+                    <div class="port-list">
+                        <!-- Port 1: SDXC -->
+                        <div class="port-chip">
+                            <div class="port-symbol">
+                                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M7 21h10a2 2 0 0 0 2 -2v-14a2 2 0 0 0 -2 -2h-6.172a2 2 0 0 0 -1.414 .586l-3.828 3.828a2 2 0 0 0 -.586 1.414v10.172a2 2 0 0 0 2 2"/></svg>
+                            </div>
+                            <div class="port-chip-info">
+                                <div class="port-chip-title-row">
+                                    <span class="port-chip-name">1. Khe cắm thẻ nhớ SDXC</span>
+                                </div>
+                                <span class="port-chip-spec">Đọc ghi dữ liệu tốc độ cao</span>
+                            </div>
+                        </div>
+
+                        <!-- Port 2: HDMI -->
+                        <div class="port-chip">
+                            <div class="port-symbol">
+                                <svg width="22" height="22" viewBox="0 0 16 16" fill="currentColor"><path d="M1 5a1 1 0 0 0-1 1v3a1 1 0 0 0 1 1h.293l.707.707a1 1 0 0 0 .707.293h10.586a1 1 0 0 0 .707-.293l.707-.707H15a1 1 0 0 0 1-1V6a1 1 0 0 0-1-1zm0 1h14v3h-.293a1 1 0 0 0-.707.293l-.707.707H2.707L2 9.293A1 1 0 0 0 1.293 9H1z"/></svg>
+                            </div>
+                            <div class="port-chip-info">
+                                <div class="port-chip-title-row">
+                                    <span class="port-chip-name">2. Cổng HDMI</span>
+                                </div>
+                                <span class="port-chip-spec">Xuất hình ảnh & âm thanh đa kênh</span>
+                            </div>
+                        </div>
+
+                        <!-- Port 3: USB 3.0 -->
+                        <div class="port-chip">
+                            <div class="port-symbol">
+                                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="7" width="20" height="10" rx="2"/><path d="M6 11h2"/><path d="M16 11h2"/></svg>
+                            </div>
+                            <div class="port-chip-info">
+                                <div class="port-chip-title-row">
+                                    <span class="port-chip-name">3. Cổng USB 3.0 Type-A</span>
+                                </div>
+                                <span class="port-chip-spec">USB 5 Gbps • Kết nối phụ kiện</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        """
+    else:
+        # Default / 14 & 16-inch MacBook Pro / 4-port Type-C
+        hardware_schematic_html = f"""
+            <div class="hardware-schematic">
+                <!-- Left Edge Panel -->
+                <div class="chassis-panel">
+                    <div class="chassis-header">
+                        <span class="chassis-title">Cạnh trái máy (Từ bản lề ra trước)</span>
+                        <span class="chassis-badge">3 cổng tiếp điện</span>
+                    </div>
+                    <div class="port-list">
+                        <!-- Port 1: MagSafe 3 -->
+                        <div id="port-chip-magsafe" class="port-chip {active_class_magsafe}">
+                            <div class="port-symbol">
+                                <svg width="20" height="20" viewBox="0 0 16 16" fill="currentColor">
+                                    <path d="M11.251.068a.5.5 0 0 1 .227.58L9.677 6.5H13a.5.5 0 0 1 .364.843l-8 8.5a.5.5 0 0 1-.842-.49L6.323 9.5H3a.5.5 0 0 1-.364-.843l8-8.5a.5.5 0 0 1 .615-.09z"/>
+                                </svg>
+                            </div>
+                            <div class="port-chip-info">
+                                <div class="port-chip-title-row">
+                                    <span class="port-chip-name">1. Cổng {magsafe_name} (Sát bản lề)</span>
+                                    {active_tag_magsafe}
+                                </div>
+                                <span class="port-chip-spec">Sạc nhanh {adapter_w_int}W • Chuẩn từ tính Apple {magsafe_name}</span>
+                            </div>
+                        </div>
+
+                        <!-- Port 2: Type-C 1 -->
+                        <div id="port-chip-left-c1" class="port-chip {active_class_left_c1}">
+                            <div class="port-symbol">
+                                <svg width="22" height="22" viewBox="0 0 16 16" fill="currentColor">
+                                    <path d="M3.5 7.5a.5.5 0 0 0 0 1h9a.5.5 0 0 0 0-1z"/>
+                                    <path d="M0 8a3 3 0 0 1 3-3h10a3 3 0 1 1 0 6H3a3 3 0 0 1-3-3m3-2a2 2 0 1 0 0 4h10a2 2 0 1 0 0-4z"/>
+                                </svg>
+                            </div>
+                            <div class="port-chip-info">
+                                <div class="port-chip-title-row">
+                                    <span class="port-chip-name">2. Cổng Type-C / Thunderbolt (Vị trí giữa)</span>
+                                    {active_tag_left_c1}
+                                </div>
+                                <span class="port-chip-spec">TB4 / USB4 • Vào: Sạc PD {adapter_w_int}W • Ra: Cấp nguồn, Xuất hình</span>
+                            </div>
+                        </div>
+
+                        <!-- Port 3: Type-C 2 -->
+                        <div id="port-chip-left-c2" class="port-chip {active_class_left_c2}">
+                            <div class="port-symbol">
+                                <svg width="22" height="22" viewBox="0 0 16 16" fill="currentColor">
+                                    <path d="M3.5 7.5a.5.5 0 0 0 0 1h9a.5.5 0 0 0 0-1z"/>
+                                    <path d="M0 8a3 3 0 0 1 3-3h10a3 3 0 1 1 0 6H3a3 3 0 0 1-3-3m3-2a2 2 0 1 0 0 4h10a2 2 0 1 0 0-4z"/>
+                                </svg>
+                            </div>
+                            <div class="port-chip-info">
+                                <div class="port-chip-title-row">
+                                    <span class="port-chip-name">3. Cổng Type-C / Thunderbolt (Phía trước)</span>
+                                    {active_tag_left_c2}
+                                </div>
+                                <span class="port-chip-spec">TB4 / USB4 • Vào: Sạc PD {adapter_w_int}W • Ra: Cấp nguồn, Xuất hình</span>
+                            </div>
+                        </div>
+
+                        <!-- Port 4: 3.5mm Headphone Jack -->
+                        <div class="port-chip">
+                            <div class="port-symbol">
+                                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                    <path d="M3 14h3a2 2 0 0 1 2 2v3a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-7a9 9 0 0 1 18 0v7a2 2 0 0 1-2 2h-1a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2h3"/>
+                                </svg>
+                            </div>
+                            <div class="port-chip-info">
+                                <div class="port-chip-title-row">
+                                    <span class="port-chip-name">4. Jack âm thanh 3.5mm</span>
+                                </div>
+                                <span class="port-chip-spec">Đầu ra âm thanh analog • Tự nhận diện tai nghe trở kháng cao</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Right Edge Panel -->
+                <div class="chassis-panel">
+                    <div class="chassis-header">
+                        <span class="chassis-title">Cạnh phải máy (Từ bản lề ra trước)</span>
+                        <span class="chassis-badge">1 cổng tiếp điện</span>
+                    </div>
+                    <div class="port-list">
+                        <!-- Port 1: HDMI -->
+                        <div class="port-chip">
+                            <div class="port-symbol">
+                                <svg width="22" height="22" viewBox="0 0 16 16" fill="currentColor">
+                                    <path d="M1 5a1 1 0 0 0-1 1v3a1 1 0 0 0 1 1h.293l.707.707a1 1 0 0 0 .707.293h10.586a1 1 0 0 0 .707-.293l.707-.707H15a1 1 0 0 0 1-1V6a1 1 0 0 0-1-1zm0 1h14v3h-.293a1 1 0 0 0-.707.293l-.707.707H2.707L2 9.293A1 1 0 0 0 1.293 9H1z"/>
+                                </svg>
+                            </div>
+                            <div class="port-chip-info">
+                                <div class="port-chip-title-row">
+                                    <span class="port-chip-name">1. Cổng HDMI (Sát bản lề)</span>
+                                </div>
+                                <span class="port-chip-spec">Đầu ra xuất hình: Chuẩn HDMI hỗ trợ 4K/8K 60Hz & Âm thanh</span>
+                            </div>
+                        </div>
+
+                        <!-- Port 2: Type-C Right -->
+                        <div id="port-chip-right-c" class="port-chip {active_class_right_c}">
+                            <div class="port-symbol">
+                                <svg width="22" height="22" viewBox="0 0 16 16" fill="currentColor">
+                                    <path d="M3.5 7.5a.5.5 0 0 0 0 1h9a.5.5 0 0 0 0-1z"/>
+                                    <path d="M0 8a3 3 0 0 1 3-3h10a3 3 0 1 1 0 6H3a3 3 0 0 1-3-3m3-2a2 2 0 1 0 0 4h10a2 2 0 1 0 0-4z"/>
+                                </svg>
+                            </div>
+                            <div class="port-chip-info">
+                                <div class="port-chip-title-row">
+                                    <span class="port-chip-name">2. Cổng Type-C / Thunderbolt (Ở giữa)</span>
+                                    {active_tag_right_c}
+                                </div>
+                                <span class="port-chip-spec">TB4 / USB4 • Vào: Sạc PD {adapter_w_int}W • Ra: Cấp nguồn 15W, Xuất hình</span>
+                            </div>
+                        </div>
+
+                        <!-- Port 3: SD Card Slot -->
+                        <div class="port-chip">
+                            <div class="port-symbol">
+                                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                    <path d="M7 21h10a2 2 0 0 0 2 -2v-14a2 2 0 0 0 -2 -2h-6.172a2 2 0 0 0 -1.414 .586l-3.828 3.828a2 2 0 0 0 -.586 1.414v10.172a2 2 0 0 0 2 2"/>
+                                </svg>
+                            </div>
+                            <div class="port-chip-info">
+                                <div class="port-chip-title-row">
+                                    <span class="port-chip-name">3. Khe cắm thẻ nhớ SDXC (Trước)</span>
+                                </div>
+                                <span class="port-chip-spec">Chuẩn UHS-II tốc độ cao 312 MB/s (Truyền dữ liệu)</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        """
 
     # Read base64 icon safely
     icon_b64 = ""
@@ -1588,14 +2016,14 @@ def generate_html(data):
                 </div>
                 <div class="device-info">
                     <div class="device-name-row">
-                        <span class="device-name">MacBook Pro 14″</span>
+                        <span class="device-name">{data['device_model_name']}</span>
                         <span class="live-pill">
                             <span class="pulse-dot"></span>
                             <span id="live-clock">{data['generated_at']}</span>
                         </span>
-                        <span class="app-version-pill" onclick="triggerCheckUpdate()" title="Nhấn để kiểm tra cập nhật BatFlow">v1.0.1</span>
+                        <span class="app-version-pill" onclick="triggerCheckUpdate()" title="Nhấn để kiểm tra cập nhật BatFlow">v1.0.2</span>
                     </div>
-                    <span class="device-chip">Apple M1 Pro • Bộ nhớ 16 GB</span>
+                    <span class="device-chip">{data['device_spec_str']}</span>
                 </div>
             </div>
             <div class="header-actions">
@@ -1664,141 +2092,7 @@ def generate_html(data):
             {power_flow_html}
 
             <!-- Hardware Port Schematic (Apple Chassis Aesthetic) -->
-            <div class="hardware-schematic">
-                <!-- Left Edge Panel -->
-                <div class="chassis-panel">
-                    <div class="chassis-header">
-                        <span class="chassis-title">Cạnh trái máy (Từ bản lề ra trước)</span>
-                        <span class="chassis-badge">3 cổng tiếp điện</span>
-                    </div>
-                    <div class="port-list">
-                        <!-- Port 1: MagSafe 3 -->
-                        <div id="port-chip-magsafe" class="port-chip {active_class_magsafe}">
-                            <div class="port-symbol">
-                                <svg width="20" height="20" viewBox="0 0 16 16" fill="currentColor">
-                                    <path d="M11.251.068a.5.5 0 0 1 .227.58L9.677 6.5H13a.5.5 0 0 1 .364.843l-8 8.5a.5.5 0 0 1-.842-.49L6.323 9.5H3a.5.5 0 0 1-.364-.843l8-8.5a.5.5 0 0 1 .615-.09z"/>
-                                </svg>
-                            </div>
-                            <div class="port-chip-info">
-                                <div class="port-chip-title-row">
-                                    <span class="port-chip-name">1. Cổng MagSafe 3 (Sát bản lề)</span>
-                                    {active_tag_magsafe}
-                                </div>
-                                <span class="port-chip-spec">Sạc nhanh 96W • Chuẩn từ tính Apple MagSafe 3 (Chỉ nhận nguồn sạc vào)</span>
-                            </div>
-                        </div>
-
-                        <!-- Port 2: Type-C 1 -->
-                        <div id="port-chip-left-c1" class="port-chip {active_class_left_c1}">
-                            <div class="port-symbol">
-                                <svg width="22" height="22" viewBox="0 0 16 16" fill="currentColor">
-                                    <path d="M3.5 7.5a.5.5 0 0 0 0 1h9a.5.5 0 0 0 0-1z"/>
-                                    <path d="M0 8a3 3 0 0 1 3-3h10a3 3 0 1 1 0 6H3a3 3 0 0 1-3-3m3-2a2 2 0 1 0 0 4h10a2 2 0 1 0 0-4z"/>
-                                </svg>
-                            </div>
-                            <div class="port-chip-info">
-                                <div class="port-chip-title-row">
-                                    <span class="port-chip-name">2. Cổng Type-C / Thunderbolt 4 (Vị trí giữa)</span>
-                                    {active_tag_left_c1}
-                                </div>
-                                <span class="port-chip-spec">TB4 (40 Gbps) • Vào: Sạc PD 100W • Ra: Cấp nguồn 15W, Xuất hình 6K 60Hz</span>
-                            </div>
-                        </div>
-
-                        <!-- Port 3: Type-C 2 -->
-                        <div id="port-chip-left-c2" class="port-chip {active_class_left_c2}">
-                            <div class="port-symbol">
-                                <svg width="22" height="22" viewBox="0 0 16 16" fill="currentColor">
-                                    <path d="M3.5 7.5a.5.5 0 0 0 0 1h9a.5.5 0 0 0 0-1z"/>
-                                    <path d="M0 8a3 3 0 0 1 3-3h10a3 3 0 1 1 0 6H3a3 3 0 0 1-3-3m3-2a2 2 0 1 0 0 4h10a2 2 0 1 0 0-4z"/>
-                                </svg>
-                            </div>
-                            <div class="port-chip-info">
-                                <div class="port-chip-title-row">
-                                    <span class="port-chip-name">3. Cổng Type-C / Thunderbolt 4 (Phía trước)</span>
-                                    {active_tag_left_c2}
-                                </div>
-                                <span class="port-chip-spec">TB4 (40 Gbps) • Vào: Sạc PD 100W • Ra: Cấp nguồn 15W, Xuất hình 6K 60Hz</span>
-                            </div>
-                        </div>
-
-                        <!-- Port 4: 3.5mm Headphone Jack -->
-                        <div class="port-chip">
-                            <div class="port-symbol">
-                                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                                    <path d="M3 14h3a2 2 0 0 1 2 2v3a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-7a9 9 0 0 1 18 0v7a2 2 0 0 1-2 2h-1a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2h3"/>
-                                </svg>
-                            </div>
-                            <div class="port-chip-info">
-                                <div class="port-chip-title-row">
-                                    <span class="port-chip-name">4. Jack âm thanh 3.5mm</span>
-                                </div>
-                                <span class="port-chip-spec">Đầu ra âm thanh analog • Tự nhận diện tai nghe trở kháng cao</span>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Right Edge Panel -->
-                <div class="chassis-panel">
-                    <div class="chassis-header">
-                        <span class="chassis-title">Cạnh phải máy (Từ bản lề ra trước)</span>
-                        <span class="chassis-badge">1 cổng tiếp điện</span>
-                    </div>
-                    <div class="port-list">
-                        <!-- Port 1: HDMI 2.0 -->
-                        <div class="port-chip">
-                            <div class="port-symbol">
-                                <svg width="22" height="22" viewBox="0 0 16 16" fill="currentColor">
-                                    <path d="M2.5 7a.5.5 0 0 0 0 1h11a.5.5 0 0 0 0-1z"/>
-                                    <path d="M1 5a1 1 0 0 0-1 1v3a1 1 0 0 0 1 1h.293l.707.707a1 1 0 0 0 .707.293h10.586a1 1 0 0 0 .707-.293l.707-.707H15a1 1 0 0 0 1-1V6a1 1 0 0 0-1-1zm0 1h14v3h-.293a1 1 0 0 0-.707.293l-.707.707H2.707L2 9.293A1 1 0 0 0 1.293 9H1z"/>
-                                </svg>
-                            </div>
-                            <div class="port-chip-info">
-                                <div class="port-chip-title-row">
-                                    <span class="port-chip-name">1. Cổng HDMI 2.0 (Sát bản lề)</span>
-                                </div>
-                                <span class="port-chip-spec">Đầu ra xuất hình: Chuẩn HDMI 2.0 hỗ trợ 4K 60Hz & Âm thanh đa kênh</span>
-                            </div>
-                        </div>
-
-                        <!-- Port 2: Type-C Right -->
-                        <div id="port-chip-right-c" class="port-chip {active_class_right_c}">
-                            <div class="port-symbol">
-                                <svg width="22" height="22" viewBox="0 0 16 16" fill="currentColor">
-                                    <path d="M3.5 7.5a.5.5 0 0 0 0 1h9a.5.5 0 0 0 0-1z"/>
-                                    <path d="M0 8a3 3 0 0 1 3-3h10a3 3 0 1 1 0 6H3a3 3 0 0 1-3-3m3-2a2 2 0 1 0 0 4h10a2 2 0 1 0 0-4z"/>
-                                </svg>
-                            </div>
-                            <div class="port-chip-info">
-                                <div class="port-chip-title-row">
-                                    <span class="port-chip-name">2. Cổng Type-C / Thunderbolt 4 (Ở giữa)</span>
-                                    {active_tag_right_c}
-                                </div>
-                                <span class="port-chip-spec">TB4 (40 Gbps) • Vào: Sạc PD 100W • Ra: Cấp nguồn 15W, Xuất hình 6K 60Hz</span>
-                            </div>
-                        </div>
-
-                        <!-- Port 3: SD Card Slot -->
-                        <div class="port-chip">
-                            <div class="port-symbol">
-                                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                                    <path d="M7 21h10a2 2 0 0 0 2 -2v-14a2 2 0 0 0 -2 -2h-6.172a2 2 0 0 0 -1.414 .586l-3.828 3.828a2 2 0 0 0 -.586 1.414v10.172a2 2 0 0 0 2 2"/>
-                                    <path d="M13 6v2"/>
-                                    <path d="M16 6v2"/>
-                                    <path d="M10 7v1"/>
-                                </svg>
-                            </div>
-                            <div class="port-chip-info">
-                                <div class="port-chip-title-row">
-                                    <span class="port-chip-name">3. Khe cắm thẻ nhớ SDXC (Trước)</span>
-                                </div>
-                                <span class="port-chip-spec">Chuẩn UHS-II tốc độ cao 312 MB/s (Truyền dữ liệu, không tiếp điện)</span>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
+            {hardware_schematic_html}
         </div>
 
         <!-- Section 3: Top Power Consumers -->
