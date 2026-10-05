@@ -1,10 +1,10 @@
 {
-  "version": "1.0.2",
-  "build": "2026.09.13",
-  "title": "BatFlow v1.0.2 • Nhận Diện Chuẩn Cổng Sạc & Sửa Lỗi Tự Động Cập Nhật",
-  "releaseNotes": "• Nhận diện chuẩn xác 100% cổng sạc (MagSafe 3, MagSafe 2, Type-C Thunderbolt) trên mọi dòng máy Mac\n• Tự động thích ứng sơ đồ khung máy theo model thiết bị (MacBook Air 2 cổng, MacBook Pro 13 inch, MacBook Pro 14/16 inch, Intel Mac)\n• Hiển thị động tên thiết bị thực tế (MacBook Air, MacBook Pro...) và cấu hình chip, RAM\n• Khắc phục triệt để lỗi cập nhật phần mềm tự động (Auto Update) trên macOS 11 Big Sur\n• Tự động chọn đúng phiên bản app tương thích kiến trúc hệ điều hành khi nâng cấp từ DMG\n• Bổ sung hỗ trợ đọc công suất củ sạc trên các dòng máy Intel và Big Sur không có ChargerData",
-  "downloadUrl": "https://github.com/tung68nt/BatFlow/releases/download/v1.0.2/BatFlow-v1.0.2.dmg",
-  "publishedAt": "2026-09-13",
+  "version": "1.1.0",
+  "build": "2026.10.05",
+  "title": "BatFlow v1.1.0 • Dashboard Native, Liquid Glass & Công Cụ Pin",
+  "releaseNotes": "• Sửa lỗi hiển thị sai thông tin máy (luôn ra MacBook Pro 14 inch / MagSafe): dashboard nay đọc trực tiếp phần cứng của máy đang chạy, không còn phụ thuộc Python\n• Sơ đồ cổng lấy từ bộ điều khiển cổng của từng máy, chỉ rõ cổng đang cấp nguồn\n• Giao diện mới: popover Liquid Glass, dashboard native với toolbar chuẩn macOS 26 (tự dùng kính mờ trên macOS cũ hơn)\n• Tab Công cụ pin: xem giới hạn sạc của macOS, kịch bản hiệu chuẩn / xả về ngưỡng / cất máy có nhắc từng bước, nhắc ngưỡng sạc và cảnh báo pin nóng\n• Danh sách ứng dụng ngốn pin theo Energy Impact thật, kèm nút Thoát và danh sách ứng dụng chặn máy ngủ\n• Nhiệt độ pin đọc từ cảm biến SMC; giảm tần suất lấy mẫu khi chạy nền để tiết kiệm pin\n• Một bản cài duy nhất cho macOS 11 trở lên (Apple Silicon)",
+  "downloadUrl": "https://github.com/tung68nt/BatFlow/releases/download/v1.1.0/BatFlow-v1.1.0.dmg",
+  "publishedAt": "2026-10-05",
   "minOSVersion": "11.0",
-  "fileSize": "3.9 MB"
+  "fileSize": "2.4 MB"
 }
