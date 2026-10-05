@@ -112,8 +112,7 @@ struct BatteryChartView: View {
                     )
                 }
             }
-            .frame(height: 74)
-            .insetWell(cornerRadius: 11)
+            .frame(height: 70)
 
             // Time Labels below chart (dynamically aligned with 12-hour window)
             HStack {

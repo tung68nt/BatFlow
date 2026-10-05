@@ -9,6 +9,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     var statusItem: NSStatusItem!
     var panel: FloatingPanel!
     var hostingView: NSHostingView<BatFiPopoverView>!
+    /// Transparent margin around the glass on macOS 26+, so the material's own soft shadow is not clipped.
+    var panelMargin: CGFloat = 0
     var model = BatteryViewModel()
     var timer: Timer?
     var powerSourceLoopSource: CFRunLoopSource?
@@ -55,10 +57,17 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         panel = FloatingPanel(contentRect: NSRect(x: 0, y: 0, width: exactSize.width, height: exactSize.height))
         if #available(macOS 26.0, *) {
             // Real Liquid Glass: the system material samples and refracts whatever sits behind the panel
-            let glass = NSGlassEffectView()
+            // The window draws no shadow of its own: a window shadow is rectangular and shows as square
+            // corners around the rounded glass. The glass sits inset in a clear container instead.
+            panelMargin = 24
+            panel.hasShadow = false
+            let container = NSView(frame: NSRect(x: 0, y: 0, width: exactSize.width + panelMargin * 2, height: exactSize.height + panelMargin * 2))
+            let glass = NSGlassEffectView(frame: container.bounds.insetBy(dx: panelMargin, dy: panelMargin))
+            glass.autoresizingMask = [.width, .height]
             glass.cornerRadius = BatFiPopoverView.cornerRadius
             glass.contentView = hostingView
-            panel.contentView = glass
+            container.addSubview(glass)
+            panel.contentView = container
         } else {
             hostingView.wantsLayer = true
             hostingView.layer?.cornerRadius = BatFiPopoverView.cornerRadius
@@ -205,10 +214,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             
             // 2. Vertical: Snug fit directly below the menu bar bottom (native macOS popover style)
             let menuBarBottom = (screenFrame.maxY > 100) ? screenFrame.maxY : buttonRect.minY
-            let posY = menuBarBottom - exactSize.height - 2.5
-            
-            panel.setFrame(NSRect(x: posX, y: posY, width: exactSize.width, height: exactSize.height), display: true)
-            panel.invalidateShadow()
+            let posY = menuBarBottom - exactSize.height - 6
+
+            panel.setFrame(NSRect(x: posX - panelMargin, y: posY - panelMargin,
+                                  width: exactSize.width + panelMargin * 2, height: exactSize.height + panelMargin * 2), display: true)
+            if panel.hasShadow { panel.invalidateShadow() }
             panel.makeKeyAndOrderFront(nil)
 
             EnergyMonitor.shared.start(client: "panel")

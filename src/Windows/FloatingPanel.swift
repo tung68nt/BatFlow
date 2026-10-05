@@ -18,10 +18,6 @@ class FloatingPanel: NSPanel {
         self.becomesKeyOnlyIfNeeded = false
     }
 
-    override var hasShadow: Bool {
-        get { return true }
-        set { super.hasShadow = newValue }
-    }
 
     override var canBecomeKey: Bool { return true }
     override var canBecomeMain: Bool { return true }

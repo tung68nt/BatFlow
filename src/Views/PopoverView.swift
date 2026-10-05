@@ -7,6 +7,7 @@ struct BatFiPopoverView: View {
     @ObservedObject var updater = UpdateManager.shared
     @ObservedObject var energy = EnergyMonitor.shared
     @ObservedObject var care = BatteryCare.shared
+    @ObservedObject var hover = PopoverHover.shared
     @Environment(\.colorScheme) var colorScheme
     var onOpenDashboard: () -> Void
     var onOpenTools: () -> Void
@@ -77,11 +78,13 @@ struct BatFiPopoverView: View {
                     }
                     .padding(.horizontal, 10)
                     .padding(.vertical, 7)
-                    .insetWell(cornerRadius: 10)
+                    .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Color.primary.opacity(0.07)))
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(PlainButtonStyle())
             }
+
+            Divider()
 
             BatteryChartView(
                 historyPoints: model.historyPoints,
@@ -92,9 +95,15 @@ struct BatFiPopoverView: View {
                 accent: accent
             )
 
+            Divider()
+
             powerWell
 
+            Divider()
+
             appsWell
+
+            Divider()
 
             actions
 
@@ -221,8 +230,6 @@ struct BatFiPopoverView: View {
                         .font(Font.system(size: 10.5, weight: .medium).monospacedDigit())
                 }
             }
-            .padding(9)
-            .insetWell(cornerRadius: 11)
         }
     }
 
@@ -249,59 +256,57 @@ struct BatFiPopoverView: View {
                     EnergyAppRow(app: app, peak: energy.apps.first?.power ?? 1, showQuit: false, compact: true)
                 }
             }
-            .padding(.horizontal, 9)
-            .padding(.vertical, 5)
-            .insetWell(cornerRadius: 11)
         }
     }
 
+    // Plain menu rows, as in the system's own menu bar panels: monochrome symbol, hover highlight, no boxes
     private var actions: some View {
-        VStack(spacing: 0) {
-            actionRow("Báo cáo phân tích chi tiết", symbol: "chart.xyaxis.line", tint: BatPalette.blue(colorScheme), badge: "⌘O", action: onOpenDashboard)
-            rowDivider
-            actionRow("Công cụ & kịch bản pin", symbol: "wand.and.stars", tint: BatPalette.green(colorScheme), badge: nil, action: onOpenTools)
-            rowDivider
-            actionRow("Kiểm tra bản cập nhật", symbol: "arrow.triangle.2.circlepath", tint: Color(red: 0.2, green: 0.72, blue: 0.62),
-                      badge: updater.isUpdateAvailable ? "CÓ BẢN MỚI" : nil, badgeProminent: true, action: onCheckUpdate)
-            rowDivider
-            actionRow("Giới thiệu BatFlow", symbol: "info.circle", tint: BatPalette.blue(colorScheme), badge: "v\(updater.currentVersion)", action: onOpenAbout)
-            rowDivider
-            actionRow("Thoát BatFlow", symbol: "power", tint: BatPalette.red(colorScheme), badge: "⌘Q", destructive: true, action: onQuit)
+        VStack(spacing: 1) {
+            actionRow("Báo cáo phân tích chi tiết", symbol: "chart.xyaxis.line", badge: "⌘O", action: onOpenDashboard)
+            actionRow("Công cụ & kịch bản pin", symbol: "wand.and.stars", badge: nil, action: onOpenTools)
+            actionRow("Kiểm tra bản cập nhật", symbol: "arrow.triangle.2.circlepath",
+                      badge: updater.isUpdateAvailable ? "Có bản mới" : nil, badgeProminent: true, action: onCheckUpdate)
+            actionRow("Giới thiệu BatFlow", symbol: "info.circle", badge: "v\(updater.currentVersion)", action: onOpenAbout)
+            actionRow("Thoát BatFlow", symbol: "power", badge: "⌘Q", action: onQuit)
         }
-        .padding(.vertical, 3)
-        .insetWell(cornerRadius: 13)
+        .padding(.horizontal, -8)
     }
 
-    private var rowDivider: some View {
-        Rectangle()
-            .fill(colorDivider)
-            .frame(height: 0.7)
-            .padding(.leading, 40)
-            .padding(.trailing, 9)
-    }
-
-    private func actionRow(_ title: String, symbol: String, tint: Color, badge: String?, badgeProminent: Bool = false,
-                           destructive: Bool = false, action: @escaping () -> Void) -> some View {
+    private func actionRow(_ title: String, symbol: String, badge: String?, badgeProminent: Bool = false, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             HStack(spacing: 9) {
-                ModernActionIcon(systemName: symbol, tintColor: tint, isDark: isDark, iconSize: 11, weight: .semibold)
+                Image(systemName: symbol)
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundColor(.secondary)
+                    .frame(width: 18)
                 Text(title)
-                    .font(.system(size: 11.5))
+                    .font(.system(size: 12.5))
                 Spacer()
                 if let badge = badge {
                     Text(badge)
-                        .font(.system(size: 9, weight: .semibold, design: .rounded))
-                        .foregroundColor(badgeProminent ? .white : .secondary)
-                        .padding(.horizontal, 5)
-                        .padding(.vertical, 1.5)
-                        .background(Capsule().fill(badgeProminent ? BatPalette.blue(colorScheme) : Color.primary.opacity(0.08)))
+                        .font(.system(size: 11))
+                        .foregroundColor(badgeProminent ? BatPalette.blue(colorScheme) : .secondary)
                 }
             }
-            .padding(.horizontal, 9)
-            .padding(.vertical, 4.5)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 5)
+            .background(
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .fill(hover.rowID == title ? Color.primary.opacity(0.10) : Color.clear)
+            )
+            .contentShape(Rectangle())
         }
-        .buttonStyle(MenuRowButtonStyle(isDestructive: destructive, isDark: isDark))
+        .buttonStyle(PlainButtonStyle())
+        .onHover { inside in
+            if inside { hover.rowID = title } else if hover.rowID == title { hover.rowID = nil }
+        }
     }
+}
+
+// MARK: - Hover Tracking (shared object: the popover re-renders every second, so per-row state would be lost)
+final class PopoverHover: ObservableObject {
+    static let shared = PopoverHover()
+    @Published var rowID: String?
 }
 
 // MARK: - Panel Background

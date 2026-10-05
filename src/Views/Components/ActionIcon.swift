@@ -1,56 +1,6 @@
 import SwiftUI
 import AppKit
 
-// MARK: - Modern Menu Row Button Style
-struct MenuRowButtonStyle: ButtonStyle {
-    var isDestructive: Bool = false
-    var isDark: Bool = false
-
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .background(
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .fill(
-                        configuration.isPressed 
-                            ? (isDestructive ? Color(NSColor.systemRed).opacity(isDark ? 0.32 : 0.15) : Color.accentColor.opacity(isDark ? 0.32 : 0.14))
-                            : Color.clear
-                    )
-            )
-            .opacity(configuration.isPressed ? 0.88 : 1.0)
-            .contentShape(Rectangle())
-    }
-}
-
-// MARK: - Clean Tinted Squircle Action Icon (Light, Airy & Modern)
-struct ModernActionIcon: View {
-    let systemName: String
-    let tintColor: Color
-    var isDark: Bool = false
-    var size: CGFloat = 22
-    var iconSize: CGFloat = 11.5
-    var weight: Font.Weight = .semibold
-
-    var body: some View {
-        ZStack {
-            // 1. Soft Translucent Pastel Tint Background
-            RoundedRectangle(cornerRadius: 6, style: .continuous)
-                .fill(tintColor.opacity(isDark ? 0.16 : 0.09))
-                .frame(width: size, height: size)
-
-            // 2. Delicate Matching Tinted Border
-            RoundedRectangle(cornerRadius: 6, style: .continuous)
-                .strokeBorder(tintColor.opacity(isDark ? 0.30 : 0.22), lineWidth: 0.8)
-                .frame(width: size, height: size)
-
-            // 3. Crisp Colored SF Symbol
-            Image(systemName: systemName)
-                .font(.system(size: iconSize, weight: weight))
-                .foregroundColor(tintColor)
-        }
-        .frame(width: size, height: size)
-    }
-}
-
 // MARK: - About BatFlow View (Apple Native Aesthetic)
 struct AboutView: View {
     @ObservedObject var updater = UpdateManager.shared
