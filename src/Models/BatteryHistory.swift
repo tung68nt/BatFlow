@@ -35,55 +35,23 @@ final class BatteryHistoryManager {
         }
     }
 
+    /// Charge levels macOS itself logged (also while BatFlow was not running or the Mac was asleep).
     func fetchSystemBatteryLogs(cutoff: Date) -> [(Date, Double)] {
+        let raw = EnergyMonitor.run("/usr/bin/pmset", ["-g", "log"], timeout: 12.0)
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.dateFormat = "yyyy-MM-dd HH:mm:ss Z"
         let now = Date()
-        let calendar = Calendar.current
-        let df = DateFormatter()
-        df.dateFormat = "yyyy.MM.dd"
-        
-        var dates = [now]
-        if let yesterday = calendar.date(byAdding: .day, value: -1, to: now) {
-            dates.insert(yesterday, at: 0)
-        }
-        
+
         var parsedEntries: [(Date, Double)] = []
-        let parseDf = DateFormatter()
-        parseDf.dateFormat = "yyyy MMM d HH:mm:ss"
-        parseDf.locale = Locale(identifier: "en_US_POSIX")
-        
-        let year = calendar.component(.year, from: now)
-        
-        for d in dates {
-            let fpath = "/private/var/log/powermanagement/\(df.string(from: d)).asl"
-            guard FileManager.default.fileExists(atPath: fpath) else { continue }
-            
-            let proc = Process()
-            proc.executableURL = URL(fileURLWithPath: "/usr/bin/syslog")
-            proc.arguments = ["-f", fpath]
-            let pipe = Pipe()
-            proc.standardOutput = pipe
-            try? proc.run()
-            let data = pipe.fileHandleForReading.readDataToEndOfFile()
-            proc.waitUntilExit()
-            
-            guard let output = String(data: data, encoding: .utf8) else { continue }
-            let lines = output.components(separatedBy: "\n")
-            
-            for line in lines {
-                guard line.contains("Charge") && (line.contains("Using AC") || line.contains("Using Batt")) else { continue }
-                guard line.count >= 15 else { continue }
-                let datePrefix = String(line.prefix(15))
-                
-                if let chargeRange = line.range(of: "Charge:?\\s*(\\d+)", options: .regularExpression) {
-                    let match = String(line[chargeRange])
-                    let digits = match.filter { $0.isNumber }
-                    if let pctVal = Double(digits), let logDate = parseDf.date(from: "\(year) \(datePrefix)") {
-                        if logDate >= cutoff && logDate <= now {
-                            parsedEntries.append((logDate, pctVal / 100.0))
-                        }
-                    }
-                }
-            }
+        for line in raw.split(separator: "\n", omittingEmptySubsequences: true) {
+            guard line.count > 26, line.first?.isNumber == true, line.contains("Charge") else { continue }
+            guard let range = line.range(of: #"Using (AC|BATT|Batt)\s*\(Charge:\s*\d+"#, options: .regularExpression),
+                  let colon = line[range].lastIndex(of: ":"),
+                  let pct = Double(line[range][line.index(after: colon)...].trimmingCharacters(in: .whitespaces)),
+                  let date = formatter.date(from: String(line.prefix(25))),
+                  date >= cutoff, date <= now, pct >= 0, pct <= 100 else { continue }
+            parsedEntries.append((date, pct / 100.0))
         }
         return parsedEntries
     }

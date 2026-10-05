@@ -2,6 +2,7 @@ import Foundation
 import AppKit
 import Combine
 import UserNotifications
+import CryptoKit
 
 // MARK: - Update Status State Machine
 enum UpdateStatus: Equatable {
@@ -57,6 +58,8 @@ class UpdateManager: NSObject, ObservableObject, URLSessionDownloadDelegate {
     private var hasNotifiedThisLaunch: Bool = false
     private let lastNotifiedTimestampKey = "LastNotifiedUpdateTimestamp"
     private var downloadTask: URLSessionDownloadTask?
+    /// SHA-256 the downloaded DMG must match, when the manifest or the GitHub API publishes one.
+    private var expectedSHA256: String? = nil
     private lazy var urlSession: URLSession = {
         let config = URLSessionConfiguration.default
         config.requestCachePolicy = .reloadIgnoringLocalCacheData
@@ -88,6 +91,32 @@ class UpdateManager: NSObject, ObservableObject, URLSessionDownloadDelegate {
 
     override init() {
         super.init()
+    }
+
+    // MARK: - Download Trust
+    /// Only HTTPS links into this repository on github.com are accepted from the manifest / API.
+    func isTrustedRepoURL(_ url: URL) -> Bool {
+        guard url.scheme?.lowercased() == "https", url.host?.lowercased() == "github.com" else { return false }
+        return url.path.hasPrefix("/\(githubRepo)/")
+    }
+
+    private func isTrustedDMGURL(_ url: URL) -> Bool {
+        return isTrustedRepoURL(url) && url.path.hasPrefix("/\(githubRepo)/releases/download/") && url.pathExtension.lowercased() == "dmg"
+    }
+
+    private var releasesPageURL: URL {
+        return URL(string: "https://github.com/\(githubRepo)/releases/latest")!
+    }
+
+    private static func sha256Hex(of fileURL: URL) -> String? {
+        guard let data = try? Data(contentsOf: fileURL, options: .mappedIfSafe) else { return nil }
+        return SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
+    }
+
+    private func normalizedDigest(_ raw: String?) -> String? {
+        guard var value = raw?.lowercased().trimmingCharacters(in: .whitespacesAndNewlines), !value.isEmpty else { return nil }
+        if value.hasPrefix("sha256:") { value = String(value.dropFirst(7)) }
+        return value.count == 64 ? value : nil
     }
 
     // MARK: - Check For Updates
@@ -195,8 +224,10 @@ class UpdateManager: NSObject, ObservableObject, URLSessionDownloadDelegate {
 
             var foundDmgURL: URL? = nil
             if let dlStr = json["downloadUrl"] as? String, let u = URL(string: dlStr) {
-                foundDmgURL = u
+                // A manifest pointing anywhere else is not followed; the user is sent to the releases page instead
+                foundDmgURL = isTrustedDMGURL(u) ? u : releasesPageURL
             }
+            self.expectedSHA256 = normalizedDigest(json["sha256"] as? String)
 
             var foundDmgSize: Int64 = 0
             if let sizeNum = json["fileSize"] as? NSNumber {
@@ -271,9 +302,10 @@ class UpdateManager: NSObject, ObservableObject, URLSessionDownloadDelegate {
             if let assets = json["assets"] as? [[String: Any]] {
                 for asset in assets {
                     if let assetName = asset["name"] as? String, assetName.hasSuffix(".dmg") {
-                        if let dlUrlStr = asset["browser_download_url"] as? String, let u = URL(string: dlUrlStr) {
+                        if let dlUrlStr = asset["browser_download_url"] as? String, let u = URL(string: dlUrlStr), isTrustedDMGURL(u) {
                             foundDmgURL = u
                             foundDmgSize = (asset["size"] as? NSNumber)?.int64Value ?? 0
+                            self.expectedSHA256 = normalizedDigest(asset["digest"] as? String)
                             break
                         }
                     }
@@ -281,8 +313,12 @@ class UpdateManager: NSObject, ObservableObject, URLSessionDownloadDelegate {
             }
 
             // Fallback: if no DMG in assets, check html_url
-            if foundDmgURL == nil, let htmlUrlStr = json["html_url"] as? String {
-                foundDmgURL = URL(string: htmlUrlStr)
+            if foundDmgURL == nil {
+                if let htmlUrlStr = json["html_url"] as? String, let u = URL(string: htmlUrlStr), isTrustedRepoURL(u) {
+                    foundDmgURL = u
+                } else {
+                    foundDmgURL = releasesPageURL
+                }
             }
 
             self.latestVersion = cleanRemoteVersion
@@ -378,15 +414,13 @@ class UpdateManager: NSObject, ObservableObject, URLSessionDownloadDelegate {
 
     // MARK: - Start Downloading DMG Asset
     func startDownload() {
-        guard let url = downloadURL else {
-            if let htmlStr = downloadURL?.absoluteString, let u = URL(string: htmlStr) {
-                NSWorkspace.shared.open(u)
-            }
+        guard let url = downloadURL, isTrustedRepoURL(url) else {
+            NSWorkspace.shared.open(releasesPageURL)
             return
         }
 
         // If it's a direct DMG download
-        if url.pathExtension.lowercased() == "dmg" {
+        if isTrustedDMGURL(url) {
             status = .downloading(progress: 0.0, bytesReceived: 0, totalBytes: dmgSize)
             downloadProgress = 0.0
 
@@ -439,62 +473,70 @@ class UpdateManager: NSObject, ObservableObject, URLSessionDownloadDelegate {
             if currentAppURL.path.hasPrefix("/Applications") {
                 targetAppPath = currentAppURL.path
             } else {
-                let defaultName = isBigSur ? "BatFlow (macOS 11 Big Sur).app" : "BatFlow.app"
-                targetAppPath = "/Applications/\(defaultName)"
+                targetAppPath = "/Applications/BatFlow.app"
             }
 
             // 2. Mount DMG silently
             let mountProc = Process()
             mountProc.executableURL = URL(fileURLWithPath: "/usr/bin/hdiutil")
-            mountProc.arguments = ["attach", dmgURL.path, "-mountpoint", mountPoint, "-nobrowse", "-quiet", "-noautoopen"]
+            mountProc.arguments = ["attach", dmgURL.path, "-mountpoint", mountPoint, "-nobrowse", "-quiet", "-noautoopen", "-readonly"]
             try? mountProc.run()
             mountProc.waitUntilExit()
 
             // 3. Match correct app version inside DMG
             let legacySourcePath = "\(mountPoint)/BatFlow (macOS 11 Big Sur).app"
             let standardSourcePath = "\(mountPoint)/BatFlow.app"
-            
-            let chosenSourcePath: String
+
+            var chosenSourcePath = ""
             if isBigSur && FileManager.default.fileExists(atPath: legacySourcePath) {
                 chosenSourcePath = legacySourcePath
             } else if FileManager.default.fileExists(atPath: standardSourcePath) {
                 chosenSourcePath = standardSourcePath
             } else if FileManager.default.fileExists(atPath: legacySourcePath) {
                 chosenSourcePath = legacySourcePath
-            } else {
+            }
+
+            // 4. Refuse anything that is not an intact BatFlow bundle
+            if !chosenSourcePath.isEmpty && !self.isValidBatFlowBundle(atPath: chosenSourcePath) {
                 chosenSourcePath = ""
             }
 
             var installedSuccess = false
 
-            if !chosenSourcePath.isEmpty && FileManager.default.fileExists(atPath: chosenSourcePath) {
-                let replaceScript = """
+            if !chosenSourcePath.isEmpty {
+                // The swap copies next to the target first, so a failed copy never leaves the user without an app.
+                // Paths travel as arguments (never interpolated into the script) and no script file is written to disk.
+                let swapScript = """
+                SRC="$1"; DST="$2"; MNT="$3"
                 sleep 0.8
-                rm -rf "\(targetAppPath)"
-                cp -R "\(chosenSourcePath)" "\(targetAppPath)"
-                /usr/bin/hdiutil detach "\(mountPoint)" -quiet || true
-                open "\(targetAppPath)"
+                NEW="$DST.new.$$"; OLD="$DST.old.$$"
+                /bin/rm -rf "$NEW"
+                if /bin/cp -R "$SRC" "$NEW"; then
+                    if [ -e "$DST" ]; then /bin/mv "$DST" "$OLD"; fi
+                    if /bin/mv "$NEW" "$DST"; then /bin/rm -rf "$OLD"; else /bin/mv "$OLD" "$DST"; fi
+                else
+                    /bin/rm -rf "$NEW"
+                fi
+                /usr/bin/hdiutil detach "$MNT" -quiet || true
+                /usr/bin/open "$DST"
                 """
-
-                let updaterScriptPath = "/tmp/batflow_updater.sh"
-                try? replaceScript.write(toFile: updaterScriptPath, atomically: true, encoding: .utf8)
-                
-                let chmodProc = Process()
-                chmodProc.executableURL = URL(fileURLWithPath: "/bin/chmod")
-                chmodProc.arguments = ["+x", updaterScriptPath]
-                try? chmodProc.run()
-                chmodProc.waitUntilExit()
 
                 installedSuccess = true
 
                 DispatchQueue.main.async {
                     let runProc = Process()
                     runProc.executableURL = URL(fileURLWithPath: "/bin/bash")
-                    runProc.arguments = [updaterScriptPath]
+                    runProc.arguments = ["-c", swapScript, "batflow-updater", chosenSourcePath, targetAppPath, mountPoint]
                     try? runProc.run()
 
                     NSApplication.shared.terminate(nil)
                 }
+            } else {
+                let detach = Process()
+                detach.executableURL = URL(fileURLWithPath: "/usr/bin/hdiutil")
+                detach.arguments = ["detach", mountPoint, "-quiet"]
+                try? detach.run()
+                detach.waitUntilExit()
             }
 
             if !installedSuccess {
@@ -505,6 +547,24 @@ class UpdateManager: NSObject, ObservableObject, URLSessionDownloadDelegate {
                 }
             }
         }
+    }
+
+    /// The bundle must carry BatFlow's identifier and an unbroken code signature (seal covers every file inside).
+    private func isValidBatFlowBundle(atPath path: String) -> Bool {
+        guard let identifier = Bundle(path: path)?.bundleIdentifier,
+              ["com.tulietech.batflow", "com.tulietech.batflow.legacy"].contains(identifier) else { return false }
+        let verify = Process()
+        verify.executableURL = URL(fileURLWithPath: "/usr/bin/codesign")
+        verify.arguments = ["--verify", "--deep", "--strict", path]
+        verify.standardOutput = FileHandle.nullDevice
+        verify.standardError = FileHandle.nullDevice
+        do {
+            try verify.run()
+        } catch {
+            return false
+        }
+        verify.waitUntilExit()
+        return verify.terminationStatus == 0
     }
 
     // MARK: - URLSessionDownloadDelegate
@@ -519,28 +579,37 @@ class UpdateManager: NSObject, ObservableObject, URLSessionDownloadDelegate {
     }
 
     func urlSession(_ session: URLSession, downloadTask: URLSessionDownloadTask, didFinishDownloadingTo location: URL) {
-        let tempDir = FileManager.default.temporaryDirectory
-        let destinationURL = tempDir.appendingPathComponent("BatFlow-Latest.dmg")
-        
-        try? FileManager.default.removeItem(at: destinationURL)
-        do {
-            try FileManager.default.copyItem(at: location, to: destinationURL)
+        if let http = downloadTask.response as? HTTPURLResponse, http.statusCode != 200 {
             DispatchQueue.main.async {
-                self.downloadedFileURL = destinationURL
-                self.status = .readyToInstall(fileURL: destinationURL)
+                self.handleError("Máy chủ trả về mã \(http.statusCode) khi tải bản cập nhật.", userInitiated: true)
             }
+            return
+        }
+
+        // Keep the image in a private per-download folder inside the user's own temporary directory
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent("BatFlowUpdate-\(UUID().uuidString)", isDirectory: true)
+        let destinationURL = folder.appendingPathComponent("BatFlow-Latest.dmg")
+        do {
+            try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
+            try FileManager.default.moveItem(at: location, to: destinationURL)
         } catch {
-            do {
-                try FileManager.default.moveItem(at: location, to: destinationURL)
-                DispatchQueue.main.async {
-                    self.downloadedFileURL = destinationURL
-                    self.status = .readyToInstall(fileURL: destinationURL)
-                }
-            } catch {
-                DispatchQueue.main.async {
-                    self.handleError("Không thể lưu file DMG: \(error.localizedDescription)", userInitiated: true)
-                }
+            DispatchQueue.main.async {
+                self.handleError("Không thể lưu file DMG: \(error.localizedDescription)", userInitiated: true)
             }
+            return
+        }
+
+        if let expected = expectedSHA256, UpdateManager.sha256Hex(of: destinationURL) != expected {
+            try? FileManager.default.removeItem(at: folder)
+            DispatchQueue.main.async {
+                self.handleError("Tệp tải về không khớp mã kiểm tra SHA-256 của bản phát hành.", userInitiated: true)
+            }
+            return
+        }
+
+        DispatchQueue.main.async {
+            self.downloadedFileURL = destinationURL
+            self.status = .readyToInstall(fileURL: destinationURL)
         }
     }
 

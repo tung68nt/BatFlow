@@ -12,9 +12,15 @@ struct EnergyApp: Identifiable {
     let bundlePath: String?
     let pids: [pid_t]
 
+    private static let iconCache = NSCache<NSString, NSImage>()
+
+    /// Cached: rows are re-rendered every second while the dashboard is open.
     var icon: NSImage? {
         guard let path = bundlePath else { return nil }
-        return NSWorkspace.shared.icon(forFile: path)
+        if let cached = EnergyApp.iconCache.object(forKey: path as NSString) { return cached }
+        let image = NSWorkspace.shared.icon(forFile: path)
+        EnergyApp.iconCache.setObject(image, forKey: path as NSString)
+        return image
     }
 
     /// Only regular foreground apps may be quit from the UI.

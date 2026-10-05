@@ -4,9 +4,6 @@ import Foundation
 import IOKit
 import IOKit.ps
 
-@_silgen_name("IOPSDrawingUnlimitedPower")
-func IOPSDrawingUnlimitedPower() -> DarwinBoolean
-
 // MARK: - History Point Type
 typealias HistoryPoint = (time: String, pct: Double)
 
@@ -122,7 +119,11 @@ class BatteryViewModel: ObservableObject {
             DispatchQueue.main.async {
                 self.isFetchingSystemLogs = false
                 if !parsed.isEmpty {
-                    self.recordedHistory.append(contentsOf: parsed)
+                    // Merging runs on every launch: keep one sample per minute so repeats do not pile up
+                    var seen = Set(self.recordedHistory.map { Int($0.0.timeIntervalSince1970 / 60) })
+                    for entry in parsed where seen.insert(Int(entry.0.timeIntervalSince1970 / 60)).inserted {
+                        self.recordedHistory.append(entry)
+                    }
                     BatteryHistoryManager.shared.saveCachedHistory(self.recordedHistory)
                     self.recomputeHistoryPoints()
                 }
@@ -246,7 +247,9 @@ class BatteryViewModel: ObservableObject {
                 }
             }
 
-            targetExtConnected = IOPSDrawingUnlimitedPower().boolValue
+            if let providing = IOPSGetProvidingPowerSourceType(snapshot)?.takeUnretainedValue() as String? {
+                targetExtConnected = providing == kIOPMACPowerKey
+            }
 
             // 2. Direct Hardware Layer via IOKit AppleSmartBattery
             let mainPort: mach_port_t
@@ -300,8 +303,9 @@ class BatteryViewModel: ObservableObject {
                     if let isChg = self.boolVal(dict["IsCharging"]) { targetCharging = isChg }
                     if let ext = self.boolVal(dict["ExternalConnected"]) { targetExtConnected = ext }
                     if let full = self.boolVal(dict["FullyCharged"]) { targetFull = full }
-                    if let tFull = self.intVal(dict["AvgTimeToFull"]) { targetTimeToFull = tFull }
-                    if let tEmpty = self.intVal(dict["AvgTimeToEmpty"]) { targetTimeRemaining = tEmpty }
+                    // Prefer the system estimate (what the macOS battery menu shows); use the gauge's raw average only as fallback
+                    if targetTimeToFull <= 0, let tFull = self.intVal(dict["AvgTimeToFull"]) { targetTimeToFull = tFull }
+                    if targetTimeRemaining <= 0, let tEmpty = self.intVal(dict["AvgTimeToEmpty"]) { targetTimeRemaining = tEmpty }
 
                     if let pt = dict["PowerTelemetryData"] as? [String: Any] {
                         if let sLoad = self.doubleVal(pt["SystemLoad"]), sLoad > 0 {

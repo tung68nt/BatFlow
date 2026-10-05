@@ -23,6 +23,8 @@
   - Hiển thị giới hạn sạc gốc của macOS và mở nhanh Cài đặt › Pin để chỉnh.
   - Kịch bản sạc/xả có hướng dẫn từng bước và thông báo: **Hiệu chuẩn pin**, **Xả về ngưỡng**, **Chuẩn bị cất máy (50%)**.
   - Nhắc rút sạc / cắm sạc theo ngưỡng tùy chỉnh và cảnh báo pin nóng.
+  - **Bảo vệ nhiệt**: xem tốc độ quạt, đề xuất ứng dụng nên thoát khi pin nóng, hạ ưu tiên ứng dụng nặng
+    (chuyển sang lõi tiết kiệm điện) bằng tay hoặc tự động cho các ứng dụng được phép; tự trả lại khi pin nguội hoặc khi thoát BatFlow.
   - Ước tính thời gian dùng theo tải hiện tại, trạng thái Chế độ nguồn điện thấp, ứng dụng đang chặn máy ngủ.
 - **Kiến trúc:**
   - 100% Swift, không phụ thuộc Python hay WebKit; mọi số liệu đọc trực tiếp từ IOKit / SMC trên chính máy đang chạy.
@@ -39,7 +41,7 @@ BatFlow/
 ├── src/
 │   ├── App/                   # main.swift, AppDelegate (menu bar, panel, vòng lấy mẫu)
 │   ├── Hardware/              # DeviceInfo (model & cổng), SMC (nhiệt độ), EnergyMonitor, PowerLog
-│   ├── Care/                  # BatteryCare: giới hạn sạc macOS, nhắc ngưỡng, kịch bản sạc/xả
+│   ├── Care/                  # BatteryCare (giới hạn sạc, nhắc ngưỡng, kịch bản), ThermalGuard (bảo vệ nhiệt)
 │   ├── Models/                # BatteryViewModel, BatteryHistory, UpdateManager
 │   ├── Views/                 # PopoverView, DashboardView, ToolsPage, UpdateView, Components/ (Glass, Chart...)
 │   └── Windows/               # FloatingPanel, DashboardWindow

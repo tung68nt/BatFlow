@@ -131,6 +131,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         timer?.tolerance = visible ? 0.1 : 1.0
     }
 
+    func applicationWillTerminate(_ notification: Notification) {
+        // Apps BatFlow slowed down must not stay slowed once it is gone
+        ThermalGuard.shared.restoreAll()
+    }
+
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
         togglePanel()
         return true

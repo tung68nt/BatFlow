@@ -7,6 +7,7 @@ struct ToolsPage: View {
     @ObservedObject var model: BatteryViewModel
     @ObservedObject var energy: EnergyMonitor
     @ObservedObject var care: BatteryCare
+    @ObservedObject var thermal = ThermalGuard.shared
     @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
@@ -14,6 +15,7 @@ struct ToolsPage: View {
             limitSection
             scenarioSection
             alertSection
+            thermalSection
             runtimeSection
         }
         .onAppear { care.refreshNativeLimit(force: true) }
@@ -225,6 +227,100 @@ struct ToolsPage: View {
 
     private func requestNotifications() {
         UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound]) { _, _ in }
+    }
+
+    // MARK: Thermal guard
+
+    private var thermalSection: some View {
+        let candidates = energy.apps.filter { ThermalGuard.canManage($0) }
+        return VStack(alignment: .leading, spacing: 10) {
+            SectionHeader(title: "Bảo vệ nhiệt", caption: "Giảm tải để hạ nhiệt độ pin, không cần quyền quản trị")
+            VStack(alignment: .leading, spacing: 14) {
+                HStack(alignment: .top, spacing: 16) {
+                    StatTile(label: "Nhiệt độ pin", value: model.tempC > 0 ? String(format: "%.1f", model.tempC) : "—", unit: model.tempC > 0 ? "°C" : "",
+                             sub: thermal.isHot ? "Đang vượt ngưỡng \(care.heatThreshold)°C" : "Ngưỡng bảo vệ \(care.heatThreshold)°C",
+                             valueColor: thermal.isHot ? BatPalette.red(colorScheme) : .primary)
+                    if thermal.fans.isEmpty {
+                        StatTile(label: "Quạt", value: "Không có", sub: "Máy tản nhiệt thụ động, giảm tải là cách duy nhất")
+                    } else {
+                        ForEach(Array(thermal.fans.enumerated()), id: \.offset) { index, fan in
+                            StatTile(label: thermal.fans.count > 1 ? "Quạt \(index + 1)" : "Quạt", value: String(format: "%.0f", fan.rpm), unit: "vòng/phút",
+                                     sub: String(format: "%.0f%% công suất • tối đa %.0f", fan.load * 100, fan.maxRPM))
+                        }
+                    }
+                }
+
+                Divider()
+
+                toggleRow(title: "Bật bảo vệ nhiệt",
+                          detail: "Khi pin vượt ngưỡng nhiệt, BatFlow báo ứng dụng đang ngốn nhất để bạn thoát hoặc hạ ưu tiên. Ngưỡng dùng chung với cảnh báo pin nóng ở trên.",
+                          isOn: Binding(get: { thermal.enabled }, set: { newValue in
+                              thermal.enabled = newValue
+                              if newValue { requestNotifications() }
+                          }))
+
+                if thermal.enabled {
+                    toggleRow(title: "Tự hạ ưu tiên ứng dụng được phép",
+                              detail: "Ứng dụng được đánh dấu bên dưới sẽ tự chuyển sang lõi tiết kiệm điện khi pin nóng và được trả lại khi pin nguội 3°C dưới ngưỡng.",
+                              isOn: Binding(get: { thermal.autoThrottle }, set: { thermal.autoThrottle = $0 }))
+                }
+
+                Divider()
+
+                Text("Ứng dụng đang chạy nặng")
+                    .font(.system(size: 12.5, weight: .medium))
+                if candidates.isEmpty {
+                    Text(energy.lastUpdated == nil ? "Đang lấy mẫu mức tiêu thụ..." : "Không có ứng dụng nào đang tiêu thụ đáng kể.")
+                        .font(.system(size: 11.5))
+                        .foregroundColor(.secondary)
+                }
+                ForEach(candidates) { app in
+                    HStack(spacing: 10) {
+                        Group {
+                            if let icon = app.icon {
+                                Image(nsImage: icon).resizable()
+                            } else {
+                                Color.clear
+                            }
+                        }
+                        .frame(width: 22, height: 22)
+                        VStack(alignment: .leading, spacing: 1) {
+                            Text(app.name)
+                                .font(.system(size: 12, weight: .medium))
+                            Text(thermal.isThrottled(app) ? "Đang chạy ở ưu tiên nền" : String(format: "Energy Impact %.1f", app.power))
+                                .font(.system(size: 10.5))
+                                .foregroundColor(thermal.isThrottled(app) ? BatPalette.blue(colorScheme) : .secondary)
+                        }
+                        Spacer()
+                        if thermal.enabled {
+                            Toggle("Cho phép tự hạ", isOn: Binding(get: { thermal.allowedApps.contains(app.name) }, set: { allowed in
+                                if allowed { thermal.allowedApps.insert(app.name) } else { thermal.allowedApps.remove(app.name) }
+                            }))
+                            .toggleStyle(CheckboxToggleStyle())
+                            .font(.system(size: 11))
+                        }
+                        Button(thermal.isThrottled(app) ? "Khôi phục" : "Hạ ưu tiên") {
+                            if thermal.isThrottled(app) { thermal.restore(appNamed: app.name) } else { thermal.throttle(app) }
+                        }
+                        .frame(width: 96)
+                    }
+                }
+                ForEach(thermal.throttled.keys.sorted().filter { name in !candidates.contains { $0.name == name } }, id: \.self) { name in
+                    HStack {
+                        Text(name)
+                            .font(.system(size: 12, weight: .medium))
+                        Text("Đang chạy ở ưu tiên nền")
+                            .font(.system(size: 10.5))
+                            .foregroundColor(BatPalette.blue(colorScheme))
+                        Spacer()
+                        Button("Khôi phục") { thermal.restore(appNamed: name) }
+                            .frame(width: 96)
+                    }
+                }
+            }
+            .padding(18)
+            .contentCard()
+        }
     }
 
     // MARK: Runtime

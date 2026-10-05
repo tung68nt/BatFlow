@@ -76,7 +76,7 @@ final class PowerLog: ObservableObject {
         for line in raw.split(separator: "\n", omittingEmptySubsequences: true) {
             guard line.count > 26, line.first?.isNumber == true else { continue }
             let interesting = line.contains("Display is turned") || line.contains("Entering Sleep") || line.contains("Wake from") || line.contains("Using ")
-            guard interesting, let date = formatter.date(from: String(line.prefix(25))), date >= horizon, date <= now else { continue }
+            guard interesting, let date = formatter.date(from: String(line.prefix(25))), date <= now else { continue }
             let text = String(line)
 
             func chargePct() -> String {
@@ -121,6 +121,6 @@ final class PowerLog: ObservableObject {
             let from = max(on, startOfDay)
             screenSeconds += max(0, now.timeIntervalSince(from))
         }
-        return (Array(events.suffix(10).reversed()), Int(screenSeconds), sessionStart)
+        return (Array(events.filter { $0.date >= horizon }.suffix(10).reversed()), Int(screenSeconds), sessionStart)
     }
 }

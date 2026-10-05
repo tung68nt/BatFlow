@@ -57,6 +57,7 @@ final class BatteryCare: ObservableObject {
     private var lastLimitRead = Date.distantPast
     private var isReadingLimit = false
     private var lastPowerNudge = Date.distantPast
+    private var isOnAC = false
 
     private init() {
         defaults.register(defaults: [
@@ -68,6 +69,8 @@ final class BatteryCare: ObservableObject {
         alertLow = defaults.integer(forKey: "care.alertLow")
         heatAlertEnabled = defaults.bool(forKey: "care.heatAlert")
         heatThreshold = defaults.integer(forKey: "care.heatThreshold")
+        let remembered = defaults.integer(forKey: "care.lastNativeLimit")
+        nativeLimit = (remembered > 0 && remembered < 100) ? remembered : nil
 
         refreshLowPower()
         if #available(macOS 12.0, *) {
@@ -93,6 +96,8 @@ final class BatteryCare: ObservableObject {
 
     // MARK: Native macOS charge limit (read-only; changing it requires an Apple-private entitlement)
 
+    /// powerd only lists the limit while a charger is attached, so the last reported value is kept
+    /// (and persisted) while on battery, and cleared only when AC is present and no limit is reported.
     func refreshNativeLimit(force: Bool = false) {
         guard !isReadingLimit, force || Date().timeIntervalSince(lastLimitRead) > 60 else { return }
         isReadingLimit = true
@@ -108,8 +113,14 @@ final class BatteryCare: ObservableObject {
             DispatchQueue.main.async {
                 guard let self = self else { return }
                 self.isReadingLimit = false
-                self.nativeLimit = limit
                 self.nativeLimitSupported = supported
+                if let limit = limit {
+                    self.nativeLimit = limit
+                    self.defaults.set(limit, forKey: "care.lastNativeLimit")
+                } else if self.isOnAC {
+                    self.nativeLimit = nil
+                    self.defaults.removeObject(forKey: "care.lastNativeLimit")
+                }
             }
         }
     }
@@ -125,9 +136,14 @@ final class BatteryCare: ObservableObject {
 
     func tick(_ model: BatteryViewModel) {
         guard model.hasBattery, model.currentPct > 0 else { return }
+        if model.isExtConnected != isOnAC {
+            isOnAC = model.isExtConnected
+            lastLimitRead = Date.distantPast
+        }
         refreshNativeLimit()
         evaluateAlerts(model)
         advanceScenario(model)
+        ThermalGuard.shared.tick(model)
     }
 
     private func evaluateAlerts(_ model: BatteryViewModel) {
@@ -151,7 +167,7 @@ final class BatteryCare: ObservableObject {
             if pct > alertLow + 2 || model.isExtConnected { lowAlertArmed = true }
         }
 
-        if heatAlertEnabled, model.tempC > 0 {
+        if heatAlertEnabled, model.tempC > 0, !ThermalGuard.shared.enabled {
             if model.tempC >= Double(heatThreshold) && heatAlertArmed {
                 heatAlertArmed = false
                 let advice = model.isCharging ? "Nên tạm rút sạc hoặc giảm tải cho tới khi máy nguội." : "Nên giảm tải hoặc để máy ở nơi thoáng."
@@ -290,7 +306,7 @@ final class BatteryCare: ObservableObject {
 
     // MARK: Notifications
 
-    private func notify(id: String, title: String, body: String) {
+    func notify(id: String, title: String, body: String) {
         let content = UNMutableNotificationContent()
         content.title = title
         content.body = body

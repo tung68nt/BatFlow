@@ -75,6 +75,35 @@ final class SMCReader {
         return (meta.dataType, Array(all.prefix(Int(meta.dataSize))))
     }
 
+    private func floatValue(_ key: String) -> Double? {
+        guard let value = read(key), value.type == SMCReader.fourCC("flt "), value.bytes.count == 4 else { return nil }
+        let raw = value.bytes.withUnsafeBytes { $0.loadUnaligned(as: UInt32.self) }
+        return Double(Float(bitPattern: UInt32(littleEndian: raw)))
+    }
+
+    struct Fan {
+        let rpm: Double
+        let minRPM: Double
+        let maxRPM: Double
+
+        /// Share of the fan's usable range currently in use, 0...1.
+        var load: Double {
+            guard maxRPM > minRPM else { return 0 }
+            return max(0, min(1, (rpm - minRPM) / (maxRPM - minRPM)))
+        }
+    }
+
+    /// Current speed of every fan; empty on fanless Macs such as MacBook Air.
+    func fans() -> [Fan] {
+        guard let count = read("FNum")?.bytes.first, count > 0, count <= 8 else { return [] }
+        var result: [Fan] = []
+        for i in 0..<Int(count) {
+            guard let rpm = floatValue("F\(i)Ac") else { continue }
+            result.append(Fan(rpm: rpm, minRPM: floatValue("F\(i)Mn") ?? 0, maxRPM: floatValue("F\(i)Mx") ?? 0))
+        }
+        return result
+    }
+
     /// Battery pack temperature in °C, or nil when the sensor is unavailable.
     func batteryTemperature() -> Double? {
         for key in ["TB0T", "TB1T", "TB2T"] {
