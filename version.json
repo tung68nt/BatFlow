@@ -1,10 +1,10 @@
 {
-  "version": "1.1.4",
+  "version": "1.1.5",
   "build": "2026.10.05",
-  "title": "BatFlow v1.1.4 • Icon Ứng Dụng Mới",
-  "releaseNotes": "• Icon ứng dụng mới: góc bo continuous chuẩn macOS, viên pin dạng kính trên nền xanh lá\n• Gồm các chỉnh sửa giao diện của 1.1.2 và 1.1.3: popover Liquid Glass gọn hơn, tia sét trên biểu tượng pin dễ nhìn",
-  "downloadUrl": "https://github.com/tung68nt/BatFlow/releases/download/v1.1.4/BatFlow-v1.1.4.dmg",
-  "sha256": "5c69fa677ce3601f1c3babd6bd64bbb4ffe5a9f8931bd4c71a05a4ab14ff3c10",
+  "title": "BatFlow v1.1.5 • Icon Thanh Menu Gọn Hơn",
+  "releaseNotes": "• Phần trăm pin nằm ngay trong icon pin trên thanh menu, không còn chữ đứng cạnh nên chiếm ít chỗ hơn hẳn\n• Icon đổi màu như của hệ thống: vàng khi bật Chế độ nguồn điện thấp, xanh lá khi đang sạc, đỏ khi pin yếu\n• Popover nằm sát dưới thanh menu thay vì bị hở xa\n• Dòng Giới hạn sạc macOS nay đọc thêm từ chính sách sạc hệ thống lưu trên máy, để hiện được cả khi đã rút sạc",
+  "downloadUrl": "https://github.com/tung68nt/BatFlow/releases/download/v1.1.5/BatFlow-v1.1.5.dmg",
+  "sha256": "91af8a9c5fdce3c82320241fafdad9112ddde67307e40da41df4c46dbced89dc",
   "publishedAt": "2026-10-05",
   "minOSVersion": "11.0",
   "fileSize": "2.0 MB"
