@@ -7,9 +7,7 @@ struct BatteryChartView: View {
     let isDark: Bool
     let colorLabel: Color
     let colorDivider: Color
-    let colorCardStroke: Color
-    let chartBg: Color
-    let emeraldGreen: Color
+    let accent: Color
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4.5) {
@@ -88,8 +86,8 @@ struct BatteryChartView: View {
                     .fill(
                         LinearGradient(
                             gradient: Gradient(colors: [
-                                emeraldGreen.opacity(isDark ? 0.35 : 0.28),
-                                emeraldGreen.opacity(0.0)
+                                accent.opacity(isDark ? 0.35 : 0.28),
+                                accent.opacity(0.0)
                             ]),
                             startPoint: .top,
                             endPoint: .bottom
@@ -109,18 +107,13 @@ struct BatteryChartView: View {
                         }
                     }
                     .stroke(
-                        emeraldGreen,
+                        accent,
                         style: StrokeStyle(lineWidth: 2.0, lineCap: .round, lineJoin: .round)
                     )
                 }
             }
             .frame(height: 74)
-            .background(chartBg)
-            .overlay(
-                RoundedRectangle(cornerRadius: 6)
-                    .stroke(colorCardStroke, lineWidth: 1)
-            )
-            .cornerRadius(6)
+            .insetWell(cornerRadius: 11)
 
             // Time Labels below chart (dynamically aligned with 12-hour window)
             HStack {

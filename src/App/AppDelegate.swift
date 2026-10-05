@@ -32,6 +32,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 self?.closePanel()
                 self?.openDetailedDashboard()
             },
+            onOpenTools: { [weak self] in
+                self?.closePanel()
+                self?.openDetailedDashboard(page: 1)
+            },
             onCheckUpdate: { [weak self] in
                 self?.closePanel()
                 self?.openUpdateWindow()
@@ -45,23 +49,32 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             }
         )
         hostingView = NSHostingView(rootView: contentView)
-        hostingView.wantsLayer = true
-        hostingView.layer?.cornerRadius = 14
-        hostingView.layer?.masksToBounds = true
         hostingView.layoutSubtreeIfNeeded()
         let exactSize = hostingView.fittingSize
 
         panel = FloatingPanel(contentRect: NSRect(x: 0, y: 0, width: exactSize.width, height: exactSize.height))
-        panel.contentView = hostingView
+        if #available(macOS 26.0, *) {
+            // Real Liquid Glass: the system material samples and refracts whatever sits behind the panel
+            let glass = NSGlassEffectView()
+            glass.cornerRadius = BatFiPopoverView.cornerRadius
+            glass.contentView = hostingView
+            panel.contentView = glass
+        } else {
+            hostingView.wantsLayer = true
+            hostingView.layer?.cornerRadius = BatFiPopoverView.cornerRadius
+            hostingView.layer?.masksToBounds = true
+            panel.contentView = hostingView
+        }
 
-        // 1. Initial Data & Fast 0.8s background sampling
+        // 1. Initial data, then adaptive sampling (fast while a BatFlow surface is visible, slow otherwise)
+        model.onSample = { [weak self] in
+            guard let self = self else { return }
+            self.updateMenuBarButton()
+            BatteryCare.shared.tick(self.model)
+        }
         model.updateData()
         updateMenuBarButton()
-
-        timer = Timer.scheduledTimer(withTimeInterval: 0.8, repeats: true) { [weak self] _ in
-            self?.model.updateData()
-            self?.updateMenuBarButton()
-        }
+        rescheduleSampling()
 
         // 2. Layer 1: CoreOS PowerSource hardware interrupt (Microsecond execution)
         let context = Unmanaged.passUnretained(self).toOpaque()
@@ -83,24 +96,39 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         DashboardWindowController.shared.onCheckUpdateRequested = { [weak self] in
             self?.openUpdateWindow()
         }
+        DashboardWindowController.shared.onVisibilityChanged = { [weak self] in
+            self?.rescheduleSampling()
+        }
 
-        // 6. Pre-populate initial report file from Bundle so window never opens blank
-        let appSupportReport = DashboardWindowController.reportHTMLURL
-        if !FileManager.default.fileExists(atPath: appSupportReport.path) {
-            if let bundleHTML = Bundle.main.url(forResource: "battery_report", withExtension: "html") {
-                try? FileManager.default.copyItem(at: bundleHTML, to: appSupportReport)
-                try? FileManager.default.setAttributes([.posixPermissions: 0o644], ofItemAtPath: appSupportReport.path)
-            }
-        } else {
-            try? FileManager.default.setAttributes([.posixPermissions: 0o644], ofItemAtPath: appSupportReport.path)
+        // 6. Drop the HTML report cached by versions before 1.1 (it was rendered by the removed Python engine)
+        if let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first {
+            try? FileManager.default.removeItem(at: appSupport.appendingPathComponent("BatFlow/battery_report.html"))
         }
 
         // 7. Support direct dashboard open flag for CLI and testing
-        if CommandLine.arguments.contains("--dashboard") {
+        if CommandLine.arguments.contains("--dashboard") || CommandLine.arguments.contains("--tools") {
+            let page = CommandLine.arguments.contains("--tools") ? 1 : 0
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
-                self?.openDetailedDashboard()
+                self?.openDetailedDashboard(page: page)
             }
         }
+        if CommandLine.arguments.contains("--panel") {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { [weak self] in
+                self?.togglePanel()
+            }
+        }
+    }
+
+    /// 1s sampling while the popover or dashboard is on screen, 5s in the background to spare the battery.
+    func rescheduleSampling() {
+        let visible = (panel?.isVisible ?? false) || DashboardWindowController.shared.isVisible
+        let interval: TimeInterval = visible ? 1.0 : 5.0
+        if let current = timer, current.isValid, abs(current.timeInterval - interval) < 0.01 { return }
+        timer?.invalidate()
+        timer = Timer.scheduledTimer(withTimeInterval: interval, repeats: true) { [weak self] _ in
+            self?.model.updateData()
+        }
+        timer?.tolerance = visible ? 0.1 : 1.0
     }
 
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
@@ -140,27 +168,13 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     func handleHardwarePowerChanged() {
         // Zero latency execution directly on the main runloop
+        DeviceInfo.shared.invalidatePortCache()
         model.updateData()
-        updateMenuBarButton()
-        DashboardWindowController.shared.updateInstantly(
-            isAC: model.isExtConnected,
-            isCharging: model.isCharging,
-            pct: model.currentPct,
-            isMagSafe: model.isMagSafeActive()
-        )
 
-        // Capture USB-PD handshake and soft-start ramp-up automatically
-        if DashboardWindowController.shared.isVisible {
-            DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { [weak self] in
-                guard let self = self, DashboardWindowController.shared.isVisible else { return }
-                self.model.updateData()
-                DashboardWindowController.shared.refresh()
-            }
-            DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) { [weak self] in
-                guard let self = self, DashboardWindowController.shared.isVisible else { return }
-                self.model.updateData()
-                DashboardWindowController.shared.refresh()
-            }
+        // The USB-PD handshake settles a moment after the plug event; sample again once it has
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in
+            DeviceInfo.shared.invalidatePortCache()
+            self?.model.updateData()
         }
     }
 
@@ -191,7 +205,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             panel.setFrame(NSRect(x: posX, y: posY, width: exactSize.width, height: exactSize.height), display: true)
             panel.invalidateShadow()
             panel.makeKeyAndOrderFront(nil)
-            
+
+            EnergyMonitor.shared.start(client: "panel")
+            rescheduleSampling()
             startClickOutsideMonitor()
         }
     }
@@ -205,7 +221,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func closePanel() {
+        guard panel.isVisible || eventMonitor != nil else { return }
         panel.orderOut(nil)
+        EnergyMonitor.shared.stop(client: "panel")
+        rescheduleSampling()
         if let monitor = eventMonitor {
             NSEvent.removeMonitor(monitor)
             eventMonitor = nil
@@ -367,9 +386,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         UpdateManager.shared.checkForUpdates(userInitiated: true)
     }
 
-    func openDetailedDashboard() {
+    func openDetailedDashboard(page: Int = 0) {
         closePanel()
-        DashboardWindowController.shared.open(with: model)
+        DashboardWindowController.shared.open(with: model, page: page)
     }
 }
 
@@ -380,8 +399,13 @@ extension AppDelegate: UNUserNotificationCenterDelegate {
     }
 
     func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse, withCompletionHandler completionHandler: @escaping () -> Void) {
+        let identifier = response.notification.request.identifier
         DispatchQueue.main.async { [weak self] in
-            self?.openUpdateWindow()
+            if identifier.hasPrefix("care-") {
+                self?.openDetailedDashboard(page: 1)
+            } else {
+                self?.openUpdateWindow()
+            }
         }
         completionHandler()
     }

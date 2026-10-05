@@ -9,7 +9,7 @@ struct MenuRowButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .background(
-                RoundedRectangle(cornerRadius: 5, style: .continuous)
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
                     .fill(
                         configuration.isPressed 
                             ? (isDestructive ? Color(NSColor.systemRed).opacity(isDark ? 0.32 : 0.15) : Color.accentColor.opacity(isDark ? 0.32 : 0.14))

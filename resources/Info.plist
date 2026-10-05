@@ -15,18 +15,18 @@
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
-	<string>1.0.2</string>
+	<string>1.1.0</string>
 	<key>CFBundleVersion</key>
-	<string>2026.09.13</string>
-	<key>NSHumanReadableCopyright</key>
-	<string>© 2026 Tulie Tech. All rights reserved.</string>
+	<string>2026.10.05</string>
 	<key>LSApplicationCategoryType</key>
 	<string>public.app-category.utilities</string>
 	<key>LSMinimumSystemVersion</key>
-	<string>12.0</string>
+	<string>11.0</string>
 	<key>LSUIElement</key>
 	<true/>
 	<key>NSHighResolutionCapable</key>
 	<true/>
+	<key>NSHumanReadableCopyright</key>
+	<string>© 2026 Tulie Tech. All rights reserved.</string>
 </dict>
 </plist>

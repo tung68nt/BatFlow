@@ -12,25 +12,38 @@ typealias HistoryPoint = (time: String, pct: Double)
 
 // MARK: - Battery Data Model (Realtime Automatic Polling)
 class BatteryViewModel: ObservableObject {
-    @Published var currentPct: Int = 80
+    @Published var hasBattery: Bool = true
+    @Published var currentPct: Int = 0
     @Published var isCharging: Bool = false
-    @Published var isExtConnected: Bool = true
-    @Published var voltage: Double = 12.07
+    @Published var isExtConnected: Bool = false
+    @Published var isFullyCharged: Bool = false
+    @Published var voltage: Double = 0.0
     @Published var amperage: Int = 0
     @Published var netWatts: Double = 0.0
-    @Published var sysLoadW: Double = 13.7
-    @Published var chargerWatts: Double = 60.0
-    @Published var tempC: Double = 30.0
-    @Published var cycleCount: Int = 780
-    @Published var fullCap: Int = 4687
-    @Published var designCap: Int = 6075
-    @Published var nominalCap: Int = 4867
+    @Published var sysLoadW: Double = 0.0
+    @Published var chargerWatts: Double = 0.0
+    @Published var adapterVoltage: Double = 0.0
+    @Published var adapterCurrent: Double = 0.0
+    @Published var tempC: Double = 0.0
+    @Published var cycleCount: Int = 0
+    @Published var designCycleCount: Int = 1000
+    @Published var fullCap: Int = 0
+    @Published var designCap: Int = 0
+    @Published var nominalCap: Int = 0
+    @Published var remainingCap: Int = 0
     @Published var timeRemainingMinutes: Int = 0
     @Published var timeToFullMinutes: Int = 0
-    @Published var powerSourceStr: String = "Nguồn ngoài (Type-C 60W)"
-    @Published var appleHealthPct: Int = 80
-    @Published var rawHealthPct: Double = 77.1
-    
+    @Published var powerSourceStr: String = "Đang đọc dữ liệu..."
+    @Published var appleHealthPct: Int = 0
+    @Published var rawHealthPct: Double = 0.0
+    @Published var ports: [HardwarePort] = []
+
+    /// Invoked on the main thread after every hardware sample.
+    var onSample: (() -> Void)?
+
+    var powerPort: HardwarePort? { ports.first { $0.isPowerSource } }
+    var isHolding: Bool { isExtConnected && !isCharging }
+
     // Dynamic 12-hour chart points (normalized 0.0 - 1.0) and time labels
     @Published var historyPoints: [HistoryPoint] = []
     @Published var chartLabels: [String] = ["--:--", "--:--", "--:--", "--:--"]
@@ -193,23 +206,30 @@ class BatteryViewModel: ObservableObject {
         // Fast asynchronous extraction on high-priority concurrent queue
         DispatchQueue.global(qos: .userInteractive).async { [weak self] in
             guard let self = self else { return }
-            
-            var targetPct: Int = 80
+
+            var targetPct: Int = 0
             var targetCharging: Bool = false
-            var targetExtConnected: Bool = true
-            var targetV: Double = 12.0
+            var targetExtConnected: Bool = false
+            var targetFull: Bool = false
+            var targetV: Double = 0.0
             var targetA: Int = 0
-            var targetTemp: Double = 30.0
+            var targetTemp: Double = 0.0
             var targetCycles: Int = 0
+            var targetDesignCycles: Int = 1000
             var targetFullCap: Int = 0
             var targetNominalCap: Int = 0
-            var targetDesignCap: Int = 6075
+            var targetDesignCap: Int = 0
+            var targetRemainingCap: Int = 0
             var targetTimeToFull: Int = 0
             var targetTimeRemaining: Int = 0
-            var targetRawHealth: Double = 100.0
-            var targetWatts: Double = 60.0
+            var targetRawHealth: Double = 0.0
+            var targetWatts: Double = 0.0
+            var targetAdapterV: Double = 0.0
+            var targetAdapterA: Double = 0.0
             var targetAppleHealth: Int = 0
             var telemetrySysLoad: Double = 0.0
+            var batteryDict: [String: Any] = [:]
+            var foundBattery = false
 
             // 1. CoreOS IOPS layer
             let snapshot = IOPSCopyPowerSourcesInfo()?.takeRetainedValue()
@@ -217,6 +237,7 @@ class BatteryViewModel: ObservableObject {
             if let sources = sources {
                 for s in sources {
                     if let desc = IOPSGetPowerSourceDescription(snapshot, s)?.takeUnretainedValue() as? [String: Any] {
+                        foundBattery = true
                         if let pct = self.intVal(desc[kIOPSCurrentCapacityKey]) { targetPct = pct }
                         if let chg = self.boolVal(desc[kIOPSIsChargingKey]) { targetCharging = chg }
                         if let timeFull = self.intVal(desc[kIOPSTimeToFullChargeKey]) { targetTimeToFull = timeFull }
@@ -225,8 +246,7 @@ class BatteryViewModel: ObservableObject {
                 }
             }
 
-            let unlimited = IOPSDrawingUnlimitedPower().boolValue
-            targetExtConnected = unlimited
+            targetExtConnected = IOPSDrawingUnlimitedPower().boolValue
 
             // 2. Direct Hardware Layer via IOKit AppleSmartBattery
             let mainPort: mach_port_t
@@ -241,26 +261,45 @@ class BatteryViewModel: ObservableObject {
                 var props: Unmanaged<CFMutableDictionary>?
                 if IORegistryEntryCreateCFProperties(service, &props, kCFAllocatorDefault, 0) == KERN_SUCCESS,
                    let dict = props?.takeRetainedValue() as? [String: Any] {
-                    
+                    foundBattery = true
+                    batteryDict = dict
+
                     if let bData = dict["BatteryData"] as? [String: Any] {
                         if let dCap = self.intVal(bData["DesignCapacity"]) { targetDesignCap = dCap }
                         if let fCap = self.intVal(bData["FullChargeCapacity"]) { targetFullCap = fCap }
                         if let nCap = self.intVal(bData["NominalChargeCapacity"]) { targetNominalCap = nCap }
-                    } else {
-                        if let fCap = self.intVal(dict["MaxCapacity"]) { targetFullCap = fCap }
-                        if let dCap = self.intVal(dict["DesignCapacity"]) { targetDesignCap = dCap }
+                        if let rCap = self.intVal(bData["RemainingCapacity"]) { targetRemainingCap = rCap }
                     }
+                    // Intel Macs publish raw mAh at the top level instead of inside BatteryData
+                    if targetDesignCap == 0, let dCap = self.intVal(dict["DesignCapacity"]) { targetDesignCap = dCap }
+                    if targetFullCap == 0 {
+                        if let fCap = self.intVal(dict["AppleRawMaxCapacity"]) {
+                            targetFullCap = fCap
+                        } else if let fCap = self.intVal(dict["MaxCapacity"]), fCap > 100 {
+                            targetFullCap = fCap
+                        }
+                    }
+                    if targetRemainingCap == 0, let rCap = self.intVal(dict["AppleRawCurrentCapacity"]) { targetRemainingCap = rCap }
 
+                    // "CurrentCapacity" is a percentage on Apple Silicon but raw mAh on Intel
                     if let cur = self.intVal(dict["CurrentCapacity"]) {
-                        targetPct = cur
+                        let maxCap = self.intVal(dict["MaxCapacity"]) ?? 100
+                        if maxCap > 0 && maxCap != 100 {
+                            targetPct = Int((Double(cur) / Double(maxCap) * 100.0).rounded())
+                        } else {
+                            targetPct = cur
+                        }
                     }
+                    targetPct = max(0, min(100, targetPct))
 
                     if let cycles = self.intVal(dict["CycleCount"]) { targetCycles = cycles }
+                    if let dc = self.intVal(dict["DesignCycleCount9C"]), dc > 0 { targetDesignCycles = dc }
                     if let temp = self.doubleVal(dict["Temperature"]) { targetTemp = temp / 100.0 }
                     if let v = self.doubleVal(dict["AppleRawBatteryVoltage"]) ?? self.doubleVal(dict["Voltage"]) { targetV = v / 1000.0 }
                     if let a = self.intVal(dict["InstantAmperage"]) ?? self.intVal(dict["Amperage"]) { targetA = a }
                     if let isChg = self.boolVal(dict["IsCharging"]) { targetCharging = isChg }
                     if let ext = self.boolVal(dict["ExternalConnected"]) { targetExtConnected = ext }
+                    if let full = self.boolVal(dict["FullyCharged"]) { targetFull = full }
                     if let tFull = self.intVal(dict["AvgTimeToFull"]) { targetTimeToFull = tFull }
                     if let tEmpty = self.intVal(dict["AvgTimeToEmpty"]) { targetTimeRemaining = tEmpty }
 
@@ -272,17 +311,20 @@ class BatteryViewModel: ObservableObject {
                         }
                     }
 
-                    if let aDetails = dict["AdapterDetails"] as? [String: Any] {
-                        if let w = self.doubleVal(aDetails["Watts"]), w > 0 { targetWatts = w }
+                    var adapter: [String: Any]?
+                    if let aDetails = dict["AdapterDetails"] as? [String: Any], !aDetails.isEmpty {
+                        adapter = aDetails
                     } else if let rawDetails = dict["AppleRawAdapterDetails"] as? [[String: Any]], let first = rawDetails.first {
-                        if let w = self.doubleVal(first["Watts"]), w > 0 { targetWatts = w }
+                        adapter = first
                     } else if let rawDetailsDict = dict["AppleRawAdapterDetails"] as? [String: Any] {
-                        if let w = self.doubleVal(rawDetailsDict["Watts"]), w > 0 { targetWatts = w }
-                    } else if let cData = dict["ChargerData"] as? [String: Any] {
-                        if let w = self.doubleVal(cData["Watts"]), w > 0 { targetWatts = w }
-                        if let chg = self.boolVal(cData["IsCharging"]) { targetCharging = chg }
+                        adapter = rawDetailsDict
                     }
-                    
+                    if let adapter = adapter {
+                        if let w = self.doubleVal(adapter["Watts"]), w > 0 { targetWatts = w }
+                        if let v = self.doubleVal(adapter["AdapterVoltage"]), v > 0 { targetAdapterV = v / 1000.0 }
+                        if let c = self.doubleVal(adapter["Current"]), c > 0 { targetAdapterA = c / 1000.0 }
+                    }
+
                     if let aHealth = self.intVal(dict["AppleHealthMetric"]) {
                         if aHealth > 0 && aHealth <= 100 { targetAppleHealth = aHealth }
                     }
@@ -294,9 +336,13 @@ class BatteryViewModel: ObservableObject {
                 }
             }
 
+            // The registry stopped exposing the pack temperature on recent macOS; the SMC sensor still reports it
+            if targetTemp <= 0, foundBattery, let smcTemp = SMCReader.shared.batteryTemperature() {
+                targetTemp = (smcTemp * 10.0).rounded() / 10.0
+            }
+
             // High Precision Thermal & Power Math
-            let vCalc = max(10.0, targetV)
-            let netWattsVal = (Double(targetA) * vCalc) / 1000.0
+            let netWattsVal = (Double(targetA) * targetV) / 1000.0
             let targetNetWatts = round(netWattsVal * 10.0) / 10.0
 
             let sysLoadRaw: Double
@@ -305,52 +351,61 @@ class BatteryViewModel: ObservableObject {
                 sysLoadRaw = abs(targetNetWatts)
             } else if telemetrySysLoad > 0.5 {
                 sysLoadRaw = telemetrySysLoad
+            } else if targetWatts > 0 && targetCharging {
+                sysLoadRaw = max(0.0, targetWatts - targetNetWatts)
             } else {
-                sysLoadRaw = targetCharging ? max(2.0, targetWatts - targetNetWatts) : (abs(targetNetWatts) > 0.5 ? abs(targetNetWatts) : 7.5)
+                sysLoadRaw = abs(targetNetWatts)
             }
             let targetSysLoad = round(sysLoadRaw * 10.0) / 10.0
 
-            if targetExtConnected && targetWatts <= 0 {
-                targetWatts = max(targetSysLoad + targetNetWatts, 20.0)
+            if !targetExtConnected {
+                targetWatts = 0
+                targetAdapterV = 0
+                targetAdapterA = 0
             }
 
-            var targetPowerStr = "Dùng pin"
+            let targetPorts = DeviceInfo.shared.currentPorts(battery: batteryDict, externalConnected: targetExtConnected)
+
+            var targetPowerStr = foundBattery ? "Dùng pin" : "Không có pin"
             if targetExtConnected {
-                let isMagSafe = self.isMagSafeActive()
-                let portName = isMagSafe ? self.detectMagSafeType() : "Type-C"
+                let portName = targetPorts.first(where: { $0.isPowerSource })?.title.replacingOccurrences(of: "Cổng ", with: "") ?? "Nguồn ngoài"
                 let wInt = Int(round(targetWatts))
-                if targetCharging {
-                    targetPowerStr = wInt > 0 ? "Cổng \(portName) (\(wInt)W)" : "Cổng \(portName)"
-                } else {
-                    targetPowerStr = wInt > 0 ? "Nguồn ngoài (\(portName) \(wInt)W)" : "Nguồn ngoài (\(portName))"
-                }
+                targetPowerStr = wInt > 0 ? "\(portName) • \(wInt)W" : portName
             }
 
             // Apply all updates on main thread
             let apply = {
+                self.hasBattery = foundBattery
                 self.currentPct = targetPct
                 self.isExtConnected = targetExtConnected
                 self.isCharging = targetCharging
+                self.isFullyCharged = targetFull
                 self.voltage = targetV
                 self.amperage = targetA
                 self.netWatts = targetNetWatts
                 self.tempC = targetTemp
                 self.sysLoadW = targetSysLoad
                 self.cycleCount = targetCycles
+                self.designCycleCount = targetDesignCycles
                 self.fullCap = targetFullCap
                 self.nominalCap = targetNominalCap
                 self.designCap = targetDesignCap
+                self.remainingCap = targetRemainingCap
                 self.timeToFullMinutes = targetTimeToFull
                 self.timeRemainingMinutes = targetTimeRemaining
                 self.rawHealthPct = targetRawHealth
                 if targetAppleHealth > 0 { self.appleHealthPct = targetAppleHealth }
                 self.chargerWatts = targetWatts
+                self.adapterVoltage = targetAdapterV
+                self.adapterCurrent = targetAdapterA
                 self.powerSourceStr = targetPowerStr
-                
+                self.ports = targetPorts
+
                 // Keep 12h chart dynamically refreshed as time passes
-                if abs((self.recordedHistory.last?.1 ?? 0) - (Double(targetPct) / 100.0)) >= 0.005 || Date().timeIntervalSince(self.lastChartRecomputeTime) >= 30 {
+                if foundBattery, abs((self.recordedHistory.last?.1 ?? 0) - (Double(targetPct) / 100.0)) >= 0.005 || Date().timeIntervalSince(self.lastChartRecomputeTime) >= 30 {
                     self.recomputeHistoryPoints()
                 }
+                self.onSample?()
             }
 
             if Thread.isMainThread {
@@ -359,110 +414,5 @@ class BatteryViewModel: ObservableObject {
                 DispatchQueue.main.async(execute: apply)
             }
         }
-    }
-
-    func isMagSafeActive() -> Bool {
-        let mainPort: mach_port_t
-        if #available(macOS 12.0, *) {
-            mainPort = kIOMainPortDefault
-        } else {
-            mainPort = kIOMasterPortDefault
-        }
-
-        // 1. Check AppleTCControllerType11 (MagSafe 3 on Apple Silicon MacBook Pro 14/16, Air M2/M3)
-        var iterator: io_iterator_t = 0
-        if IOServiceGetMatchingServices(mainPort, IOServiceMatching("AppleTCControllerType11"), &iterator) == KERN_SUCCESS {
-            defer { IOObjectRelease(iterator) }
-            var service = IOIteratorNext(iterator)
-            while service != 0 {
-                defer {
-                    IOObjectRelease(service)
-                    service = IOIteratorNext(iterator)
-                }
-                var props: Unmanaged<CFMutableDictionary>?
-                if IORegistryEntryCreateCFProperties(service, &props, kCFAllocatorDefault, 0) == KERN_SUCCESS,
-                   let dict = props?.takeRetainedValue() as? [String: Any] {
-                    if let desc = dict["PortDescription"] as? String, desc.contains("MagSafe") {
-                        if (dict["ConnectionActive"] as? Bool == true) || (dict["ConnectionActive"] as? Int == 1) {
-                            return true
-                        }
-                    }
-                }
-            }
-        }
-
-        // 2. Check AppleTCController base class for MagSafe entry
-        var tcIterator: io_iterator_t = 0
-        if IOServiceGetMatchingServices(mainPort, IOServiceMatching("AppleTCController"), &tcIterator) == KERN_SUCCESS {
-            defer { IOObjectRelease(tcIterator) }
-            var s = IOIteratorNext(tcIterator)
-            while s != 0 {
-                defer {
-                    IOObjectRelease(s)
-                    s = IOIteratorNext(tcIterator)
-                }
-                var props: Unmanaged<CFMutableDictionary>?
-                if IORegistryEntryCreateCFProperties(s, &props, kCFAllocatorDefault, 0) == KERN_SUCCESS,
-                   let dict = props?.takeRetainedValue() as? [String: Any] {
-                    if let desc = dict["PortDescription"] as? String, desc.contains("MagSafe") {
-                        if (dict["ConnectionActive"] as? Bool == true) || (dict["ConnectionActive"] as? Int == 1) {
-                            return true
-                        }
-                    }
-                }
-            }
-        }
-
-        // 3. Check AppleSmartBattery AdapterDetails for MagSafe 2 / MagSafe 1 (Intel Macs on Big Sur)
-        let bService = IOServiceGetMatchingService(mainPort, IOServiceMatching("AppleSmartBattery"))
-        if bService != 0 {
-            defer { IOObjectRelease(bService) }
-            var props: Unmanaged<CFMutableDictionary>?
-            if IORegistryEntryCreateCFProperties(bService, &props, kCFAllocatorDefault, 0) == KERN_SUCCESS,
-               let dict = props?.takeRetainedValue() as? [String: Any] {
-                let name: String
-                if let aDetails = dict["AdapterDetails"] as? [String: Any] {
-                    name = (aDetails["Name"] as? String ?? "") + " " + (aDetails["Description"] as? String ?? "")
-                } else if let rawDetails = dict["AppleRawAdapterDetails"] as? [[String: Any]], let first = rawDetails.first {
-                    name = (first["Name"] as? String ?? "") + " " + (first["Description"] as? String ?? "")
-                } else {
-                    name = ""
-                }
-                if name.localizedCaseInsensitiveContains("magsafe") {
-                    return true
-                }
-            }
-        }
-
-        return false
-    }
-
-    func detectMagSafeType() -> String {
-        let mainPort: mach_port_t
-        if #available(macOS 12.0, *) {
-            mainPort = kIOMainPortDefault
-        } else {
-            mainPort = kIOMasterPortDefault
-        }
-
-        var iterator: io_iterator_t = 0
-        if IOServiceGetMatchingServices(mainPort, IOServiceMatching("AppleTCControllerType11"), &iterator) == KERN_SUCCESS {
-            IOObjectRelease(iterator)
-            return "MagSafe 3"
-        }
-
-        let bService = IOServiceGetMatchingService(mainPort, IOServiceMatching("AppleSmartBattery"))
-        if bService != 0 {
-            defer { IOObjectRelease(bService) }
-            var props: Unmanaged<CFMutableDictionary>?
-            if IORegistryEntryCreateCFProperties(bService, &props, kCFAllocatorDefault, 0) == KERN_SUCCESS,
-               let dict = props?.takeRetainedValue() as? [String: Any] {
-                let name = ((dict["AdapterDetails"] as? [String: Any])?["Name"] as? String) ?? ""
-                if name.contains("MagSafe 2") {
-                    return "MagSafe 2"
-                }
-            }
-        }
-        return "MagSafe"
     }
 }
