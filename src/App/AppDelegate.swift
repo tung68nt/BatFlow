@@ -222,6 +222,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             panel.makeKeyAndOrderFront(nil)
 
             EnergyMonitor.shared.start(client: "panel")
+            PowerLog.shared.reload()
             rescheduleSampling()
             startClickOutsideMonitor()
         }

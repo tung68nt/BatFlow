@@ -99,6 +99,16 @@ enum DashboardFormat {
         return f
     }()
 
+    static let shortClock: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "HH:mm"
+        return f
+    }()
+
+    static func hm(_ seconds: Int) -> String {
+        return seconds >= 3600 ? String(format: "%dh %02dm", seconds / 3600, (seconds % 3600) / 60) : "\(max(0, seconds) / 60) phút"
+    }
+
     static func hms(_ seconds: Int) -> String {
         return String(format: "%dh %02dm %02ds", seconds / 3600, (seconds % 3600) / 60, seconds % 60)
     }
@@ -294,6 +304,7 @@ struct OverviewPage: View {
                 StatTile(label: "Tổng màn hình sáng hôm nay", value: DashboardFormat.hms(powerLog.liveScreenSeconds(now: now)), sub: "Tích lũy từ 00:00")
                 StatTile(label: "Máy đang tiêu thụ", value: DashboardFormat.watts(model.sysLoadW), unit: "W",
                          sub: String(format: "Pin %.2f V • %d mA", model.voltage, model.amperage))
+                awakeTile
                 StatTile(label: "Nhiệt độ pin", value: model.tempC > 0 ? String(format: "%.1f", model.tempC) : "—", unit: model.tempC > 0 ? "°C" : "",
                          sub: model.tempC <= 0 ? "Máy không công bố cảm biến" : (model.tempC >= 38 ? "Nóng, nên giảm tải" : (model.tempC >= 35 ? "Hơi ấm" : "Bình thường")),
                          valueColor: model.tempC >= 38 ? BatPalette.red(colorScheme) : .primary)
@@ -301,6 +312,24 @@ struct OverviewPage: View {
         }
         .padding(22)
         .contentCard()
+    }
+
+    /// Awake time on battery since the charger was last pulled (sleep excluded).
+    private var awakeTile: some View {
+        Group {
+            if !model.isExtConnected, let awake = powerLog.awakeSecondsSinceUnplug(now: now), let unplug = powerLog.lastUnplug {
+                StatTile(label: "Đã chạy từ lúc rút sạc", value: DashboardFormat.hms(awake), sub: awakeDetail(unplug))
+            } else {
+                StatTile(label: "Đã chạy từ lúc rút sạc", value: "—",
+                         sub: model.isExtConnected ? "Đang cắm sạc" : "Đang đọc nhật ký nguồn")
+            }
+        }
+    }
+
+    private func awakeDetail(_ unplug: (date: Date, pct: Int?)) -> String {
+        let time = DashboardFormat.eventTime.string(from: unplug.date)
+        guard let pct = unplug.pct, pct >= model.currentPct else { return "Rút lúc \(time) • không tính lúc ngủ" }
+        return "Rút lúc \(time) ở \(pct)% • đã dùng \(pct - model.currentPct)%"
     }
 
     // MARK: Power flow

@@ -157,8 +157,12 @@ final class BatteryCare: ObservableObject {
     func tick(_ model: BatteryViewModel) {
         guard model.hasBattery, model.currentPct > 0 else { return }
         if model.isExtConnected != isOnAC {
+            let unplugged = isOnAC && !model.isExtConnected
             isOnAC = model.isExtConnected
             lastLimitRead = Date.distantPast
+            if unplugged { PowerLog.shared.noteUnplug(pct: model.currentPct) }
+            // the system log shows the new power source a moment later
+            DispatchQueue.main.asyncAfter(deadline: .now() + 3) { PowerLog.shared.reload() }
         }
         refreshNativeLimit()
         evaluateAlerts(model)

@@ -21,7 +21,55 @@ final class PowerLog: ObservableObject {
     @Published var sessionStart: Date?
     @Published var loadedAt: Date?
 
+    // Battery session: when the charger was last pulled, and every sleep / wake since the log began
+    @Published var unplugFromLog: (date: Date, pct: Int?)?
+    @Published var lastACLine: Date?
+    private var wakeTransitions: [(date: Date, awake: Bool)] = []
+
     private var isLoading = false
+    private let defaults = UserDefaults.standard
+
+    /// Called when BatFlow itself sees the charger being pulled: exact to the second, unlike the log,
+    /// which only shows the new power source on its next line.
+    func noteUnplug(pct: Int) {
+        defaults.set(Date().timeIntervalSince1970, forKey: "power.observedUnplug")
+        defaults.set(pct, forKey: "power.observedUnplugPct")
+        objectWillChange.send()
+    }
+
+    /// Start of the current battery session: BatFlow's own observation when it is newer than the last
+    /// log line on AC, otherwise the first battery line in the log.
+    var lastUnplug: (date: Date, pct: Int?)? {
+        let observedAt = defaults.double(forKey: "power.observedUnplug")
+        if observedAt > 0 {
+            let observed = Date(timeIntervalSince1970: observedAt)
+            let coversCurrentSession = lastACLine.map { observed > $0 } ?? true
+            let notOlderThanLog = unplugFromLog.map { observed <= $0.date.addingTimeInterval(120) } ?? true
+            if coversCurrentSession && notOlderThanLog {
+                let pct = defaults.integer(forKey: "power.observedUnplugPct")
+                return (observed, pct > 0 ? pct : unplugFromLog?.pct)
+            }
+        }
+        return unplugFromLog
+    }
+
+    /// Seconds the Mac has been awake since the charger was last pulled. Sleep is excluded; a closed lid
+    /// with the system still running counts, because nothing in the log puts the system to sleep then.
+    /// Background maintenance wakes (DarkWake) while asleep are not counted.
+    func awakeSecondsSinceUnplug(now: Date = Date()) -> Int? {
+        guard let start = lastUnplug?.date, start <= now else { return nil }
+        // state in effect at the start = the last transition before it (awake when the log has none)
+        var awake = wakeTransitions.last(where: { $0.date <= start })?.awake ?? true
+        var cursor = start
+        var total = 0.0
+        for change in wakeTransitions where change.date > start && change.date <= now {
+            if awake { total += change.date.timeIntervalSince(cursor) }
+            awake = change.awake
+            cursor = change.date
+        }
+        if awake { total += now.timeIntervalSince(cursor) }
+        return Int(total)
+    }
 
     /// Seconds of screen-on time so far today, extrapolated live from the last parse.
     func liveScreenSeconds(now: Date = Date()) -> Int {
@@ -47,12 +95,24 @@ final class PowerLog: ObservableObject {
                 self.events = parsed.events
                 self.screenSecondsToday = parsed.screenSeconds
                 self.sessionStart = parsed.sessionStart
+                self.unplugFromLog = parsed.unplug
+                self.lastACLine = parsed.lastACLine
+                self.wakeTransitions = parsed.wakeTransitions
                 self.loadedAt = Date()
             }
         }
     }
 
-    private static func parse(_ raw: String) -> (events: [PowerEvent], screenSeconds: Int, sessionStart: Date?) {
+    private struct Parsed {
+        var events: [PowerEvent]
+        var screenSeconds: Int
+        var sessionStart: Date?
+        var unplug: (date: Date, pct: Int?)?
+        var lastACLine: Date?
+        var wakeTransitions: [(date: Date, awake: Bool)]
+    }
+
+    private static func parse(_ raw: String) -> Parsed {
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: "en_US_POSIX")
         formatter.dateFormat = "yyyy-MM-dd HH:mm:ss Z"
@@ -65,6 +125,9 @@ final class PowerLog: ObservableObject {
         var displayOnAt: Date?
         var screenSeconds = 0.0
         var lastOnAC: Bool?
+        var unplug: (date: Date, pct: Int?)?
+        var lastACLine: Date?
+        var wakeTransitions: [(date: Date, awake: Bool)] = []
 
         func closeScreen(at date: Date) {
             guard let on = displayOnAt else { return }
@@ -92,11 +155,13 @@ final class PowerLog: ObservableObject {
                 events.append(PowerEvent(date: date, kind: .displayOff, title: "Tắt màn hình", detail: "Màn hình tạm tắt tiết kiệm năng lượng"))
             } else if text.contains("Entering Sleep") {
                 closeScreen(at: date)
+                if wakeTransitions.last?.awake != false { wakeTransitions.append((date, false)) }
                 if !text.contains("Maintenance Sleep") && !text.contains("DarkWake") {
                     let reason = text.contains("Clamshell") ? "Gập nắp máy" : (text.contains("Idle") ? "Nhàn rỗi" : (text.contains("Software") ? "Người dùng chọn ngủ" : "Hệ thống"))
                     events.append(PowerEvent(date: date, kind: .sleep, title: "Chuyển sang chế độ ngủ", detail: "Lý do: \(reason)"))
                 }
             } else if text.contains("Wake from") && !text.contains("DarkWake") {
+                if wakeTransitions.last?.awake != true { wakeTransitions.append((date, true)) }
                 events.append(PowerEvent(date: date, kind: .wake, title: "Máy thức dậy", detail: text.contains("lid") ? "Mở nắp máy" : "Tiếp tục phiên làm việc"))
             }
 
@@ -112,6 +177,12 @@ final class PowerLog: ObservableObject {
                         events.append(PowerEvent(date: date, kind: .unplugged, title: "Rút sạc\(level)", detail: "Chuyển sang dùng pin"))
                     }
                 }
+                if onAC {
+                    lastACLine = date
+                    unplug = nil
+                } else if unplug == nil {
+                    unplug = (date, Int(chargePct()))
+                }
                 lastOnAC = onAC
             }
         }
@@ -121,6 +192,7 @@ final class PowerLog: ObservableObject {
             let from = max(on, startOfDay)
             screenSeconds += max(0, now.timeIntervalSince(from))
         }
-        return (Array(events.filter { $0.date >= horizon }.suffix(10).reversed()), Int(screenSeconds), sessionStart)
+        return Parsed(events: Array(events.filter { $0.date >= horizon }.suffix(10).reversed()), screenSeconds: Int(screenSeconds),
+                      sessionStart: sessionStart, unplug: unplug, lastACLine: lastACLine, wakeTransitions: wakeTransitions)
     }
 }

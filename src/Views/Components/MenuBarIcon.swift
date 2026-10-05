@@ -6,7 +6,9 @@ enum MenuBarIcon {
     static let size = NSSize(width: 30, height: 13)
     private static let bodyRect = NSRect(x: 0.5, y: 0.5, width: 26, height: 12)
     private static let boltWidth: CGFloat = 4.6
-    private static let pauseWidth: CGFloat = 4.0
+    private static let pauseWidth: CGFloat = 3.6
+    private static let boltGap: CGFloat = 0.5
+    private static let pauseGap: CGFloat = 1.8
     private static let kern: CGFloat = 0.1
 
     /// The digits as vector outlines. Filling outlines (instead of drawing text) keeps their position exact:
@@ -34,7 +36,7 @@ enum MenuBarIcon {
     /// One size for every level: the largest at which the widest case ("100" next to the bolt) still fits.
     private static let fontSize: CGFloat = {
         var size: CGFloat = 11
-        while size > 7 && outline("100", size: size).boundingBoxOfPath.width + 0.5 + boltWidth > bodyRect.width - 2.8 {
+        while size > 7 && outline("100", size: size).boundingBoxOfPath.width + max(boltGap + boltWidth, pauseGap + pauseWidth) > bodyRect.width - 4.0 {
             size -= 0.25
         }
         return size
@@ -95,14 +97,14 @@ enum MenuBarIcon {
                 glyphPath.close()
                 glyphWidth = boltWidth
             } else if isHolding {
-                glyphPath.appendRoundedRect(NSRect(x: 0, y: 1.6, width: 1.5, height: 6.2), xRadius: 0.5, yRadius: 0.5)
-                glyphPath.appendRoundedRect(NSRect(x: 2.5, y: 1.6, width: 1.5, height: 6.2), xRadius: 0.5, yRadius: 0.5)
+                glyphPath.appendRoundedRect(NSRect(x: 0, y: 1.6, width: 1.3, height: 6.2), xRadius: 0.45, yRadius: 0.45)
+                glyphPath.appendRoundedRect(NSRect(x: 2.3, y: 1.6, width: 1.3, height: 6.2), xRadius: 0.45, yRadius: 0.45)
                 glyphWidth = pauseWidth
             }
             let hasGlyph = glyphWidth > 0
 
             // Regular-width SF at medium weight, set tight, same size at every level
-            let gap: CGFloat = isHolding ? 1.0 : (hasGlyph ? 0.5 : 0)
+            let gap: CGFloat = isHolding ? pauseGap : (hasGlyph ? boltGap : 0)
             let digits = outline("\(level)", size: fontSize)
             let ink = digits.boundingBoxOfPath
             let contentWidth = ink.width + gap + glyphWidth

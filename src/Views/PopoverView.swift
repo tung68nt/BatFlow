@@ -8,6 +8,7 @@ struct BatFiPopoverView: View {
     @ObservedObject var energy = EnergyMonitor.shared
     @ObservedObject var care = BatteryCare.shared
     @ObservedObject var hover = PopoverHover.shared
+    @ObservedObject var powerLog = PowerLog.shared
     @Environment(\.colorScheme) var colorScheme
     var onOpenDashboard: () -> Void
     var onOpenTools: () -> Void
@@ -51,6 +52,9 @@ struct BatFiPopoverView: View {
             VStack(spacing: 6) {
                 infoRow(etaLabel, etaValue, valueColor: model.isCharging ? accent : .primary)
                 infoRow("Nguồn cấp điện", model.powerSourceStr)
+                if !model.isExtConnected, let awake = powerLog.awakeSecondsSinceUnplug(), let unplug = powerLog.lastUnplug {
+                    infoRow("Đã chạy từ lúc rút sạc", "\(DashboardFormat.hm(awake)) (rút lúc \(DashboardFormat.shortClock.string(from: unplug.date)))")
+                }
                 infoRow("Số chu kỳ sạc", "\(model.cycleCount) / \(model.designCycleCount) lần")
                 infoRow("Nhiệt độ pin", model.tempC > 0 ? String(format: "%.1f°C", model.tempC) : "—", valueColor: model.tempC >= 38 ? BatPalette.red(colorScheme) : .primary)
                 infoRow("Sức khỏe pin", healthText)
