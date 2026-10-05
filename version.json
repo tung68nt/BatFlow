@@ -1,10 +1,11 @@
 {
-  "version": "1.1.0",
+  "version": "1.1.1",
   "build": "2026.10.05",
-  "title": "BatFlow v1.1.0 • Dashboard Native, Liquid Glass & Công Cụ Pin",
-  "releaseNotes": "• Sửa lỗi hiển thị sai thông tin máy (luôn ra MacBook Pro 14 inch / MagSafe): dashboard nay đọc trực tiếp phần cứng của máy đang chạy, không còn phụ thuộc Python\n• Sơ đồ cổng lấy từ bộ điều khiển cổng của từng máy, chỉ rõ cổng đang cấp nguồn\n• Giao diện mới: popover Liquid Glass, dashboard native với toolbar chuẩn macOS 26 (tự dùng kính mờ trên macOS cũ hơn)\n• Tab Công cụ pin: xem giới hạn sạc của macOS, kịch bản hiệu chuẩn / xả về ngưỡng / cất máy có nhắc từng bước, nhắc ngưỡng sạc và cảnh báo pin nóng\n• Danh sách ứng dụng ngốn pin theo Energy Impact thật, kèm nút Thoát và danh sách ứng dụng chặn máy ngủ\n• Nhiệt độ pin đọc từ cảm biến SMC; giảm tần suất lấy mẫu khi chạy nền để tiết kiệm pin\n• Một bản cài duy nhất cho macOS 11 trở lên (Apple Silicon)",
-  "downloadUrl": "https://github.com/tung68nt/BatFlow/releases/download/v1.1.0/BatFlow-v1.1.0.dmg",
+  "title": "BatFlow v1.1.1 • Vá Bảo Mật Trình Cập Nhật, Số Liệu Chuẩn Hơn & Bảo Vệ Nhiệt",
+  "releaseNotes": "• Bảo mật: trình cập nhật chỉ tải từ đúng kho GitHub của BatFlow, kiểm tra mã SHA-256 và chữ ký của bản tải về, không còn ghi script ra thư mục tạm dùng chung\n• Cài bản mới an toàn hơn: bản cũ chỉ bị thay sau khi bản mới đã chép xong\n• Thời gian còn lại / thời gian sạc đầy nay khớp với số macOS hiển thị\n• Vẫn hiện giới hạn sạc của macOS khi đã rút sạc\n• Biểu đồ 12 giờ lấy thêm dữ liệu lúc máy ngủ, không còn cộng dồn bản ghi trùng\n• Mới: Bảo vệ nhiệt — xem tốc độ quạt, gợi ý ứng dụng nên thoát khi pin nóng, hạ ưu tiên ứng dụng nặng bằng tay hoặc tự động cho các ứng dụng bạn cho phép",
+  "downloadUrl": "https://github.com/tung68nt/BatFlow/releases/download/v1.1.1/BatFlow-v1.1.1.dmg",
+  "sha256": "91e3587bbe54699c066cf05c9bcd9eebb80e22176e496a4d7813fe9bfdc523c9",
   "publishedAt": "2026-10-05",
   "minOSVersion": "11.0",
-  "fileSize": "2.4 MB"
+  "fileSize": "2.5 MB"
 }
