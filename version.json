@@ -1,10 +1,10 @@
 {
-  "version": "1.1.6",
-  "build": "2026.10.05",
-  "title": "BatFlow v1.1.6 • Icon Thanh Menu Chuẩn Hệ Thống",
-  "releaseNotes": "• Icon pin trên thanh menu vẽ lại theo tỉ lệ và kiểu chữ của icon hệ thống: chữ số San Francisco nét vừa, một cỡ chung cho mọi mức pin\n• Chữ số nằm đúng giữa viên pin ở mọi độ phân giải màn hình\n• Tia sét và dấu tạm dừng mảnh hơn, đặt sát chữ số; cực pin dạng bo như của macOS",
-  "downloadUrl": "https://github.com/tung68nt/BatFlow/releases/download/v1.1.6/BatFlow-v1.1.6.dmg",
-  "sha256": "f0a44d544b2aabe07ae49ea57e5afeec4af57793cfafe9b882a1ec64257ee26d",
+  "version": "1.1.7",
+  "build": "2026.10.06",
+  "title": "BatFlow v1.1.7 • Thời Gian Chạy Từ Lúc Rút Sạc",
+  "releaseNotes": "• Mới: Đã chạy từ lúc rút sạc — tổng thời gian máy thức kể từ lần rút sạc gần nhất, không tính lúc ngủ; gập màn mà máy vẫn chạy thì vẫn tính. Hiện trong popover và dashboard, kèm giờ rút sạc và số phần trăm đã dùng\n• Icon thanh menu: nới khoảng cách giữa chữ số và dấu tạm dừng, cỡ chữ chung nhỏ hơn một chút để số 100 không sát hai mép",
+  "downloadUrl": "https://github.com/tung68nt/BatFlow/releases/download/v1.1.7/BatFlow-v1.1.7.dmg",
+  "sha256": "f6d46cec16ebc86adfcaf6ea88d3f9bc659b9ef430169033add4021d02079d73",
   "publishedAt": "2026-10-06",
   "minOSVersion": "11.0",
   "fileSize": "2.0 MB"
