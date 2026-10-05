@@ -1,11 +1,11 @@
 {
-  "version": "1.1.5",
+  "version": "1.1.6",
   "build": "2026.10.05",
-  "title": "BatFlow v1.1.5 • Icon Thanh Menu Gọn Hơn",
-  "releaseNotes": "• Phần trăm pin nằm ngay trong icon pin trên thanh menu, không còn chữ đứng cạnh nên chiếm ít chỗ hơn hẳn\n• Icon đổi màu như của hệ thống: vàng khi bật Chế độ nguồn điện thấp, xanh lá khi đang sạc, đỏ khi pin yếu\n• Popover nằm sát dưới thanh menu thay vì bị hở xa\n• Dòng Giới hạn sạc macOS nay đọc thêm từ chính sách sạc hệ thống lưu trên máy, để hiện được cả khi đã rút sạc",
-  "downloadUrl": "https://github.com/tung68nt/BatFlow/releases/download/v1.1.5/BatFlow-v1.1.5.dmg",
-  "sha256": "91af8a9c5fdce3c82320241fafdad9112ddde67307e40da41df4c46dbced89dc",
-  "publishedAt": "2026-10-05",
+  "title": "BatFlow v1.1.6 • Icon Thanh Menu Chuẩn Hệ Thống",
+  "releaseNotes": "• Icon pin trên thanh menu vẽ lại theo tỉ lệ và kiểu chữ của icon hệ thống: chữ số San Francisco nét vừa, một cỡ chung cho mọi mức pin\n• Chữ số nằm đúng giữa viên pin ở mọi độ phân giải màn hình\n• Tia sét và dấu tạm dừng mảnh hơn, đặt sát chữ số; cực pin dạng bo như của macOS",
+  "downloadUrl": "https://github.com/tung68nt/BatFlow/releases/download/v1.1.6/BatFlow-v1.1.6.dmg",
+  "sha256": "f0a44d544b2aabe07ae49ea57e5afeec4af57793cfafe9b882a1ec64257ee26d",
+  "publishedAt": "2026-10-06",
   "minOSVersion": "11.0",
   "fileSize": "2.0 MB"
 }
