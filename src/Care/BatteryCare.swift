@@ -109,7 +109,12 @@ final class BatteryCare: ObservableObject {
                 let digits = out[r].split(separator: "=").last.map { $0.filter { $0.isNumber } } ?? ""
                 if let value = Int(digits), value > 0, value < 100 { limit = value }
             }
-            let supported = out.contains("Battery level limits") || out.contains("No battery level limits")
+            var supported = out.contains("Battery level limits") || out.contains("No battery level limits")
+            // pmset only lists the limit while a charger is attached; powerd's stored policy also answers on battery
+            if limit == nil, let stored = BatteryCare.storedChargePolicyLimit() {
+                limit = stored
+                supported = true
+            }
             DispatchQueue.main.async {
                 guard let self = self else { return }
                 self.isReadingLimit = false
@@ -123,6 +128,21 @@ final class BatteryCare: ObservableObject {
                 }
             }
         }
+    }
+
+    /// Reads the manual charge limit from powerd's persisted policies (a world-readable keyed archive).
+    static func storedChargePolicyLimit() -> Int? {
+        guard let outer = NSDictionary(contentsOfFile: "/Library/Preferences/com.apple.powerd.charging.plist"),
+              let blob = outer["policies"] as? Data,
+              let archive = (try? PropertyListSerialization.propertyList(from: blob, options: [], format: nil)) as? [String: Any],
+              let objects = archive["$objects"] as? [Any] else { return nil }
+        var lowest: Int?
+        for case let policy as [String: Any] in objects {
+            guard let soc = (policy["soclimit"] as? NSNumber)?.intValue, soc > 0, soc < 100 else { continue }
+            if (policy["terminated"] as? NSNumber)?.boolValue == true { continue }
+            lowest = min(lowest ?? soc, soc)
+        }
+        return lowest
     }
 
     static func openBatterySettings() {

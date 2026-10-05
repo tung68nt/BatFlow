@@ -252,98 +252,18 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         return match == .darkAqua
     }
 
-    func drawMenuBarIcon(pct: Int, isCharging: Bool, isExtConnected: Bool, isDark: Bool) -> NSImage {
-        let size = NSSize(width: 27, height: 13)
-        let image = NSImage(size: size)
-        image.lockFocus()
-
-        // Adaptive stroke: Crisp White on Dark, Dark Charcoal on Light
-        let strokeColor: NSColor = isDark ? NSColor.white : NSColor(white: 0.12, alpha: 0.95)
-        let isHolding = isExtConnected && !isCharging
-
-        let fillColor: NSColor
-        if isHolding {
-            fillColor = NSColor(red: 0.15, green: 0.70, blue: 0.88, alpha: 1.0) // Apple cyan/blue for hold
-        } else if pct <= 20 {
-            fillColor = NSColor.systemRed
-        } else if pct <= 45 {
-            fillColor = NSColor.systemOrange
-        } else {
-            fillColor = NSColor(red: 0.15, green: 0.85, blue: 0.45, alpha: 1.0)
-        }
-
-        // Outer capsule
-        let bodyRect = NSRect(x: 1, y: 1, width: 22, height: 11)
-        let bodyPath = NSBezierPath(roundedRect: bodyRect, xRadius: 2.5, yRadius: 2.5)
-        bodyPath.lineWidth = 1.2
-        strokeColor.setStroke()
-        bodyPath.stroke()
-
-        // Nipple
-        let nippleRect = NSRect(x: 23.5, y: 4, width: 2, height: 5)
-        let nipplePath = NSBezierPath(roundedRect: nippleRect, xRadius: 1, yRadius: 1)
-        strokeColor.setFill()
-        nipplePath.fill()
-
-        // Inner fluid fill
-        let maxInnerWidth = 18.0
-        let fillWidth = max(2.0, (Double(max(0, min(100, pct))) / 100.0) * maxInnerWidth)
-        let fillRect = NSRect(x: 3, y: 3, width: fillWidth, height: 7)
-        let fillPath = NSBezierPath(roundedRect: fillRect, xRadius: 1.5, yRadius: 1.5)
-        fillColor.setFill()
-        fillPath.fill()
-
-        let symbolConfig: NSImage.SymbolConfiguration?
-        if #available(macOS 12.0, *) {
-            symbolConfig = NSImage.SymbolConfiguration(paletteColors: [strokeColor])
-        } else {
-            symbolConfig = nil
-        }
-
-        // Distinct iconography: Bolt when actively charging, Pause when on Hold / Power Bypass
-        if isCharging {
-            var bolt = NSImage(systemSymbolName: "bolt.fill", accessibilityDescription: nil)
-            if let config = symbolConfig {
-                bolt = bolt?.withSymbolConfiguration(config)
-            }
-            if let bolt = bolt {
-                let rect = NSRect(x: 8.5, y: 2.2, width: 7.5, height: 8.5)
-                bolt.draw(in: rect, from: .zero, operation: .sourceOver, fraction: 1.0)
-            }
-        } else if isHolding {
-            var pause = NSImage(systemSymbolName: "pause.fill", accessibilityDescription: nil)
-            if let config = symbolConfig {
-                pause = pause?.withSymbolConfiguration(config)
-            }
-            if let pause = pause {
-                let rect = NSRect(x: 8.5, y: 2.8, width: 6.5, height: 7.5)
-                pause.draw(in: rect, from: .zero, operation: .sourceOver, fraction: 1.0)
-            }
-        }
-
-        image.unlockFocus()
-        return image
-    }
-
     func updateMenuBarButton() {
         guard let button = statusItem.button else { return }
-        let isDark = isMenuBarDark()
-        button.image = drawMenuBarIcon(
+        button.image = MenuBarIcon.image(
             pct: model.currentPct,
             isCharging: model.isCharging,
             isExtConnected: model.isExtConnected,
-            isDark: isDark
+            isLowPower: BatteryCare.shared.lowPowerMode,
+            isDark: isMenuBarDark()
         )
-        button.imagePosition = .imageLeft
-        let textColor: NSColor = isDark ? NSColor.white : NSColor(white: 0.12, alpha: 0.95)
-        let attrTitle = NSAttributedString(
-            string: " \(model.currentPct)%",
-            attributes: [
-                .foregroundColor: textColor,
-                .font: NSFont.systemFont(ofSize: 12.5, weight: .semibold)
-            ]
-        )
-        button.attributedTitle = attrTitle
+        button.imagePosition = .imageOnly
+        button.title = ""
+        button.toolTip = "BatFlow • \(model.currentPct)% • \(model.powerSourceStr)"
     }
 
     func openAboutWindow() {
