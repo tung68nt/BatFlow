@@ -126,9 +126,12 @@ struct BatteryGlyph: View {
                     .frame(width: max(4, (bodyWidth - 6) * CGFloat(max(0, min(100, pct))) / 100.0), height: geo.size.height - 6)
                     .padding(.leading, 3)
                 if isCharging {
+                    // Text-coloured bolt with a background-coloured halo: readable over both the fill and the empty part
                     Image(systemName: "bolt.fill")
-                        .font(.system(size: geo.size.height * 0.5, weight: .bold))
-                        .foregroundColor(.white)
+                        .font(.system(size: geo.size.height * 0.66, weight: .heavy))
+                        .foregroundColor(.primary)
+                        .shadow(color: Color(NSColor.windowBackgroundColor), radius: 0.6)
+                        .shadow(color: Color(NSColor.windowBackgroundColor), radius: 0.6)
                         .frame(width: bodyWidth)
                 }
                 RoundedRectangle(cornerRadius: 1.5)
