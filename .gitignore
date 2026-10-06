@@ -1,0 +1,44 @@
+# Dependencies
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+venv/
+.venv/
+env/
+__pycache__/
+*.pyc
+*.pyo
+
+# Build artifacts
+dist/
+build/
+.next/
+out/
+target/
+.turbo/
+.cache/
+
+# Secrets & Local Config
+.env
+.env.local
+.env.*.local
+*.env
+*.pem
+*.key
+
+# System & IDE
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+.agents/
+
+# Large Binaries (>50MB)
+*.zip
+*.tar.gz
+*.iso
+*.dmg
+*.mp4
+*.mov

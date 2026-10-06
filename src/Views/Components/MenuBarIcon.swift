@@ -14,7 +14,7 @@ enum MenuBarIcon {
     /// The digits as vector outlines. Filling outlines (instead of drawing text) keeps their position exact:
     /// text drawing snaps glyphs to whole pixels, which nudged the number off-centre at screen resolution.
     private static func outline(_ text: String, size: CGFloat) -> CGPath {
-        let attributes: [NSAttributedString.Key: Any] = [.font: NSFont.systemFont(ofSize: size, weight: .medium), .kern: kern]
+        let attributes: [NSAttributedString.Key: Any] = [.font: NSFont.systemFont(ofSize: size, weight: .semibold), .kern: kern]
         let line = CTLineCreateWithAttributedString(NSAttributedString(string: text, attributes: attributes))
         let path = CGMutablePath()
         for run in CTLineGetGlyphRuns(line) as! [CTRun] {
@@ -103,7 +103,7 @@ enum MenuBarIcon {
             }
             let hasGlyph = glyphWidth > 0
 
-            // Regular-width SF at medium weight, set tight, same size at every level
+            // Regular-width SF at semibold weight, set tight, same size at every level
             let gap: CGFloat = isHolding ? pauseGap : (hasGlyph ? boltGap : 0)
             let digits = outline("\(level)", size: fontSize)
             let ink = digits.boundingBoxOfPath
