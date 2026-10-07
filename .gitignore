@@ -40,5 +40,6 @@ Thumbs.db
 *.tar.gz
 *.iso
 *.dmg
+!releases/*.dmg
 *.mp4
 *.mov

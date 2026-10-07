@@ -1,11 +1,11 @@
 {
-  "version": "1.1.7",
-  "build": "2026.10.06",
-  "title": "BatFlow v1.1.7 • Thời Gian Chạy Từ Lúc Rút Sạc",
-  "releaseNotes": "• Mới: Đã chạy từ lúc rút sạc — tổng thời gian máy thức kể từ lần rút sạc gần nhất, không tính lúc ngủ; gập màn mà máy vẫn chạy thì vẫn tính. Hiện trong popover và dashboard, kèm giờ rút sạc và số phần trăm đã dùng\n• Icon thanh menu: nới khoảng cách giữa chữ số và dấu tạm dừng, cỡ chữ chung nhỏ hơn một chút để số 100 không sát hai mép",
-  "downloadUrl": "https://github.com/tung68nt/BatFlow/releases/download/v1.1.7/BatFlow-v1.1.7.dmg",
-  "sha256": "f6d46cec16ebc86adfcaf6ea88d3f9bc659b9ef430169033add4021d02079d73",
-  "publishedAt": "2026-10-06",
+  "version": "1.1.8",
+  "build": "2026.10.07",
+  "title": "BatFlow v1.1.8 • Bản vá Cân đối lề & Liquid Glass macOS HIG",
+  "releaseNotes": "• Cân đối khoảng trống UI: Khắc phục triệt để khoảng cách lề dưới trong cửa sổ Cập nhật phần mềm, Giới thiệu và Popover chính; bố cục các nút hành động khít đều, cân xứng hoàn hảo.\n• Tối ưu Liquid Glass HIG: Áp dụng hairline liquid divider 0.6pt siêu mảnh, bổ sung viền phản xạ ánh sáng tinh tế quanh capsule trạng thái sạc và banner cập nhật, bảo toàn độ trong suốt chiết quang tự nhiên.",
+  "downloadUrl": "https://github.com/tung68nt/BatFlow/releases/download/v1.1.8/BatFlow-v1.1.8.dmg",
+  "sha256": "78dbafa6ff6e798079502a070930ca149675ece2b74d231074f6366b4452ab67",
+  "publishedAt": "2026-10-07",
   "minOSVersion": "11.0",
   "fileSize": "2.0 MB"
 }
