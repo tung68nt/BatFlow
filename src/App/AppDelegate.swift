@@ -276,7 +276,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         let win = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 310, height: 320),
+            contentRect: NSRect(x: 0, y: 0, width: 310, height: 285),
             styleMask: [.titled, .closable],
             backing: .buffered,
             defer: false
@@ -303,7 +303,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         let win = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 420, height: 360),
+            contentRect: NSRect(x: 0, y: 0, width: 420, height: 320),
             styleMask: [.titled, .closable],
             backing: .buffered,
             defer: false

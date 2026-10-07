@@ -33,7 +33,7 @@ struct UpdateView: View {
     }
 
     var body: some View {
-        VStack(spacing: 16) {
+        VStack(spacing: 14) {
             // Header: App Icon & Title
             HStack(spacing: 14) {
                 if let icon = NSImage(named: NSImage.applicationIconName) ?? NSApp.applicationIconImage {
@@ -74,13 +74,13 @@ struct UpdateView: View {
                             .foregroundColor(textSecondary)
                         Spacer()
                     }
-                    .frame(height: 170)
+                    .frame(height: 148)
 
                 case .upToDate(let version):
-                    VStack(spacing: 9) {
+                    VStack(spacing: 8) {
                         Spacer()
                         Image(systemName: "checkmark.circle.fill")
-                            .font(.system(size: 38))
+                            .font(.system(size: 36))
                             .foregroundColor(emeraldGreen)
                         
                         Text("Bạn đang dùng phiên bản mới nhất!")
@@ -104,14 +104,14 @@ struct UpdateView: View {
                         .padding(.vertical, 3.5)
                         .background(cardBg)
                         .cornerRadius(6)
-                        .padding(.top, 4)
+                        .padding(.top, 2)
 
                         Spacer()
                     }
-                    .frame(height: 170)
+                    .frame(height: 148)
 
                 case .updateAvailable(let version, let title, let notes, _, let size):
-                    VStack(alignment: .leading, spacing: 10) {
+                    VStack(alignment: .leading, spacing: 8) {
                         HStack {
                             VStack(alignment: .leading, spacing: 2) {
                                 HStack(spacing: 6) {
@@ -146,7 +146,7 @@ struct UpdateView: View {
                         }
 
                         // Release Notes Card
-                        VStack(alignment: .leading, spacing: 6) {
+                        VStack(alignment: .leading, spacing: 5) {
                             Text("Nội dung cập nhật:")
                                 .font(.system(size: 10.5, weight: .semibold))
                                 .foregroundColor(textSecondary)
@@ -159,7 +159,7 @@ struct UpdateView: View {
                                     .frame(maxWidth: .infinity, alignment: .leading)
                                     .padding(8)
                             }
-                            .frame(height: 100)
+                            .frame(height: 84)
                             .background(cardBg)
                             .overlay(
                                 RoundedRectangle(cornerRadius: 6)
@@ -168,10 +168,10 @@ struct UpdateView: View {
                             .cornerRadius(6)
                         }
                     }
-                    .frame(height: 170)
+                    .frame(height: 148)
 
                 case .downloading(let progress, let received, let total):
-                    VStack(spacing: 14) {
+                    VStack(spacing: 12) {
                         Spacer()
                         VStack(spacing: 8) {
                             HStack {
@@ -201,13 +201,13 @@ struct UpdateView: View {
                         .cornerRadius(8)
                         Spacer()
                     }
-                    .frame(height: 170)
+                    .frame(height: 148)
 
                 case .readyToInstall:
-                    VStack(spacing: 12) {
+                    VStack(spacing: 10) {
                         Spacer()
                         Image(systemName: "arrow.down.app.fill")
-                            .font(.system(size: 38))
+                            .font(.system(size: 36))
                             .foregroundColor(accentBlue)
 
                         Text("Tải hoàn tất! Sẵn sàng nâng cấp.")
@@ -221,7 +221,7 @@ struct UpdateView: View {
                             .padding(.horizontal, 16)
                         Spacer()
                     }
-                    .frame(height: 170)
+                    .frame(height: 148)
 
                 case .installing:
                     VStack(spacing: 14) {
@@ -233,13 +233,13 @@ struct UpdateView: View {
                             .foregroundColor(textPrimary)
                         Spacer()
                     }
-                    .frame(height: 170)
+                    .frame(height: 148)
 
                 case .error(let msg):
                     VStack(spacing: 10) {
                         Spacer()
                         Image(systemName: "exclamationmark.triangle.fill")
-                            .font(.system(size: 34))
+                            .font(.system(size: 32))
                             .foregroundColor(.orange)
 
                         Text("Không thể kiểm tra cập nhật")
@@ -253,7 +253,7 @@ struct UpdateView: View {
                             .padding(.horizontal, 10)
                         Spacer()
                     }
-                    .frame(height: 170)
+                    .frame(height: 148)
                 }
             }
 
@@ -403,11 +403,10 @@ struct UpdateView: View {
                     .buttonStyle(.plain)
                 }
             }
-            .padding(.top, 2)
         }
-        .padding(.horizontal, 22)
-        .padding(.top, 16)
-        .padding(.bottom, 18)
-        .frame(width: 420, height: 360)
+        .padding(.horizontal, 20)
+        .padding(.top, 14)
+        .padding(.bottom, 14)
+        .frame(width: 420, height: 320)
     }
 }

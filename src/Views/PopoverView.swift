@@ -83,12 +83,16 @@ struct BatFiPopoverView: View {
                     .padding(.horizontal, 10)
                     .padding(.vertical, 7)
                     .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Color.primary.opacity(0.07)))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 10, style: .continuous)
+                            .strokeBorder(Color.primary.opacity(isDark ? 0.09 : 0.05), lineWidth: 0.6)
+                    )
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(PlainButtonStyle())
             }
 
-            Divider()
+            liquidDivider
 
             BatteryChartView(
                 historyPoints: model.historyPoints,
@@ -99,15 +103,15 @@ struct BatFiPopoverView: View {
                 accent: accent
             )
 
-            Divider()
+            liquidDivider
 
             powerWell
 
-            Divider()
+            liquidDivider
 
             appsWell
 
-            Divider()
+            liquidDivider
 
             actions
 
@@ -124,7 +128,9 @@ struct BatFiPopoverView: View {
             .foregroundColor(.secondary)
             .padding(.horizontal, 4)
         }
-        .padding(16)
+        .padding(.horizontal, 16)
+        .padding(.top, 14)
+        .padding(.bottom, 12)
         .frame(width: 326)
         .background(PanelBackground(cornerRadius: BatFiPopoverView.cornerRadius))
         .clipShape(RoundedRectangle(cornerRadius: BatFiPopoverView.cornerRadius, style: .continuous))
@@ -139,6 +145,12 @@ struct BatFiPopoverView: View {
     }
 
     // MARK: Pieces
+
+    private var liquidDivider: some View {
+        Rectangle()
+            .fill(colorDivider)
+            .frame(height: 0.6)
+    }
 
     private var updateBanner: some View {
         Button(action: onCheckUpdate) {
@@ -160,10 +172,19 @@ struct BatFiPopoverView: View {
             .padding(.horizontal, 10)
             .padding(.vertical, 7)
             .background(
-                LinearGradient(gradient: Gradient(colors: [Color(red: 0.05, green: 0.48, blue: 0.98), Color(red: 0.0, green: 0.65, blue: 0.85)]),
-                               startPoint: .leading, endPoint: .trailing)
+                LinearGradient(
+                    gradient: Gradient(colors: [
+                        Color(red: 0.05, green: 0.48, blue: 0.98).opacity(isDark ? 0.90 : 0.85),
+                        Color(red: 0.0, green: 0.65, blue: 0.85).opacity(isDark ? 0.82 : 0.78)
+                    ]),
+                    startPoint: .leading, endPoint: .trailing
+                )
             )
             .clipShape(RoundedRectangle(cornerRadius: 11, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 11, style: .continuous)
+                    .strokeBorder(Color.white.opacity(isDark ? 0.25 : 0.35), lineWidth: 0.8)
+            )
         }
         .buttonStyle(PlainButtonStyle())
     }
@@ -185,6 +206,7 @@ struct BatFiPopoverView: View {
             .padding(.horizontal, 9)
             .padding(.vertical, 4)
             .background(Capsule().fill(accent.opacity(0.17)))
+            .overlay(Capsule().strokeBorder(accent.opacity(0.24), lineWidth: 0.6))
         }
     }
 

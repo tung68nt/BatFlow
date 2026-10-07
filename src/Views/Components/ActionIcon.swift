@@ -79,7 +79,7 @@ struct AboutView: View {
             }
         }
         .padding(.horizontal, 20)
-        .padding(.vertical, 20)
-        .frame(width: 310, height: 320)
+        .padding(.vertical, 16)
+        .frame(width: 310, height: 285)
     }
 }
