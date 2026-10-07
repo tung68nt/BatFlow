@@ -1,10 +1,10 @@
 {
-  "version": "1.1.8",
+  "version": "1.1.9",
   "build": "2026.10.07",
-  "title": "BatFlow v1.1.8 • Bản vá Cân đối lề & Liquid Glass macOS HIG",
-  "releaseNotes": "• Cân đối khoảng trống UI: Khắc phục triệt để khoảng cách lề dưới trong cửa sổ Cập nhật phần mềm, Giới thiệu và Popover chính; bố cục các nút hành động khít đều, cân xứng hoàn hảo.\n• Tối ưu Liquid Glass HIG: Áp dụng hairline liquid divider 0.6pt siêu mảnh, bổ sung viền phản xạ ánh sáng tinh tế quanh capsule trạng thái sạc và banner cập nhật, bảo toàn độ trong suốt chiết quang tự nhiên.",
-  "downloadUrl": "https://github.com/tung68nt/BatFlow/releases/download/v1.1.8/BatFlow-v1.1.8.dmg",
-  "sha256": "78dbafa6ff6e798079502a070930ca149675ece2b74d231074f6366b4452ab67",
+  "title": "BatFlow v1.1.9 • Bản vá Menu Bar Battery Icon Replica 1:1 Apple HIG",
+  "releaseNotes": "• Chuẩn hóa biểu tượng Pin Menu Bar chuẩn xác 1:1 theo Apple macOS: Chiều cao 12.0pt (24px @2x), góc bo squircle 4.5pt, đầu cực dương vòm chữ D (D-shaped dome) đồng nhất.\n• Phân biệt trực quan trạng thái Sạc vs Hold: Tự động hiển thị Tia sét vector (⚡) khi pin đang nạp điện; chuyển sang biểu tượng Tạm dừng (||) thanh mảnh bo tròn dạng viên thuốc (pill) khi ở chế độ Giữ sạc (Hold) ở ngưỡng giới hạn (80%).\n• Khắc rỗng vector (.destinationOut) sắc nét: Cắt rỗng liền mạch xuyên qua cả phần pin nạp lẫn phần vỏ mờ, kích hoạt chế độ Dynamic Template (isTemplate) thích ứng hoàn hảo với mọi hình nền sáng / tối macOS.",
+  "downloadUrl": "https://github.com/tung68nt/BatFlow/releases/download/v1.1.9/BatFlow-v1.1.9.dmg",
+  "sha256": "0255d4a74ff73ad93ee562ca828d74c8a8eb4fe6125a696a994beb5a999447b1",
   "publishedAt": "2026-10-07",
   "minOSVersion": "11.0",
   "fileSize": "2.0 MB"
