@@ -1,133 +1,241 @@
 import AppKit
 
-// MARK: - Menu Bar Battery Icon
-// Compact, system-style: the percentage is knocked out of the battery body itself, so no text sits beside it.
+// MARK: - Menu Bar Battery Icon (Apple Native Replica)
+// Pixel-perfect replica of the macOS system battery indicator with percentage knocked out.
 enum MenuBarIcon {
-    static let size = NSSize(width: 30, height: 13)
-    private static let bodyRect = NSRect(x: 0.5, y: 0.5, width: 26, height: 12)
-    private static let boltWidth: CGFloat = 4.6
-    private static let pauseWidth: CGFloat = 3.6
-    private static let boltGap: CGFloat = 0.5
-    private static let pauseGap: CGFloat = 1.8
-    private static let kern: CGFloat = 0.1
+    /// Exact Apple native menu bar battery dimensions (22.0pt body + 1.3pt gap + 1.5pt cap)
+    static let size = NSSize(width: 25.8, height: 12.0)
+    private static let bodyRect = NSRect(x: 0.5, y: 0.0, width: 22.0, height: 12.0)
+    private static let capRect = NSRect(x: 23.8, y: 4.0, width: 1.5, height: 4.0)
+    private static let bodyCornerRadius: CGFloat = 4.5
+    private static let emptyAlpha: CGFloat = 0.40
+    private static let kern: CGFloat = -0.2
 
-    /// The digits as vector outlines. Filling outlines (instead of drawing text) keeps their position exact:
-    /// text drawing snaps glyphs to whole pixels, which nudged the number off-centre at screen resolution.
-    private static func outline(_ text: String, size: CGFloat) -> CGPath {
-        let attributes: [NSAttributedString.Key: Any] = [.font: NSFont.systemFont(ofSize: size, weight: .semibold), .kern: kern]
+    enum HoldSymbolStyle: String, CaseIterable {
+        case pause = "pause"   // Elegant Apple-style dual pill bars
+        case plug = "plug"     // Apple powerplug.fill adapter icon
+        case bolt = "bolt"     // Keep lightning bolt like macOS native
+    }
+
+    // MARK: - Vector Bolt Path (Exact Apple bolt.fill mathematical bezier outline, calibrated to 1:1)
+    private static let boltPath: CGPath = {
+        let path = CGMutablePath()
+        path.move(to: CGPoint(x: 0.0, y: 3.676))
+        path.addCurve(to: CGPoint(x: 0.272, y: 3.418), control1: CGPoint(x: 0.0, y: 3.527), control2: CGPoint(x: 0.113, y: 3.418))
+        path.addLine(to: CGPoint(x: 2.290, y: 3.418))
+        path.addLine(to: CGPoint(x: 1.232, y: 0.594))
+        path.addCurve(to: CGPoint(x: 1.746, y: 0.314), control1: CGPoint(x: 1.084, y: 0.206), control2: CGPoint(x: 1.487, y: 0.0))
+        path.addLine(to: CGPoint(x: 4.999, y: 4.315))
+        path.addCurve(to: CGPoint(x: 5.098, y: 4.555), control1: CGPoint(x: 5.065, y: 4.396), control2: CGPoint(x: 5.098, y: 4.470))
+        path.addCurve(to: CGPoint(x: 4.826, y: 4.813), control1: CGPoint(x: 5.098, y: 4.703), control2: CGPoint(x: 4.982, y: 4.813))
+        path.addLine(to: CGPoint(x: 2.807, y: 4.813))
+        path.addLine(to: CGPoint(x: 3.863, y: 7.637))
+        path.addCurve(to: CGPoint(x: 3.352, y: 7.917), control1: CGPoint(x: 4.011, y: 8.024), control2: CGPoint(x: 3.610, y: 8.231))
+        path.addLine(to: CGPoint(x: 0.096, y: 3.915))
+        path.addCurve(to: CGPoint(x: 0.0, y: 3.676), control1: CGPoint(x: 0.031, y: 3.835), control2: CGPoint(x: 0.0, y: 3.761))
+        path.closeSubpath()
+        var t = CGAffineTransform(scaleX: 0.94, y: 0.94)
+        return path.copy(using: &t)!
+    }()
+
+    // MARK: - Sleek Pause Vector Path (2 elegant rounded pills, perfectly proportioned to digits)
+    private static let pausePath: CGPath = {
+        let path = CGMutablePath()
+        let bar1 = CGRect(x: 0.0, y: 0.0, width: 1.1, height: 6.2)
+        let bar2 = CGRect(x: 2.2, y: 0.0, width: 1.1, height: 6.2)
+        path.addPath(CGPath(roundedRect: bar1, cornerWidth: 0.55, cornerHeight: 0.55, transform: nil))
+        path.addPath(CGPath(roundedRect: bar2, cornerWidth: 0.55, cornerHeight: 0.55, transform: nil))
+        return path
+    }()
+
+    // MARK: - Power Plug Vector Path (Apple powerplug adapter icon for bypass hold)
+    private static let plugPath: CGPath = {
+        let conf = NSImage.SymbolConfiguration(pointSize: 6.5, weight: .semibold)
+        if let img = NSImage(systemSymbolName: "powerplug.fill", accessibilityDescription: nil)?.withSymbolConfiguration(conf),
+           let rep = img.representations.first {
+            let sel = NSSelectorFromString("outlinePath")
+            if rep.responds(to: sel), let bp = rep.perform(sel).takeUnretainedValue() as? NSBezierPath {
+                var path = CGMutablePath()
+                var points = [CGPoint](repeating: .zero, count: 3)
+                for i in 0..<bp.elementCount {
+                    let type = bp.element(at: i, associatedPoints: &points)
+                    switch type {
+                    case .moveTo: path.move(to: points[0])
+                    case .lineTo: path.addLine(to: points[0])
+                    case .quadraticCurveTo: path.addQuadCurve(to: points[1], control: points[0])
+                    case .curveTo, .cubicCurveTo: path.addCurve(to: points[2], control1: points[0], control2: points[1])
+                    case .closePath: path.closeSubpath()
+                    @unknown default: break
+                    }
+                }
+                let bounds = path.boundingBox
+                var t = CGAffineTransform(scaleX: 0.45, y: -0.45).translatedBy(x: 0, y: -bounds.height)
+                if let flipped = path.copy(using: &t) {
+                    return flipped
+                }
+            }
+        }
+        return pausePath
+    }()
+
+    // MARK: - Native D-Shaped Terminal Cap (Flat against gap, smooth convex dome outward)
+    private static func makeCapPath(in rect: NSRect) -> CGPath {
+        let path = CGMutablePath()
+        let r: CGFloat = 0.75
+        path.move(to: CGPoint(x: rect.minX, y: rect.minY))
+        path.addLine(to: CGPoint(x: rect.minX, y: rect.maxY))
+        path.addLine(to: CGPoint(x: rect.maxX - r, y: rect.maxY))
+        path.addArc(tangent1End: CGPoint(x: rect.maxX, y: rect.maxY), tangent2End: CGPoint(x: rect.maxX, y: rect.midY), radius: r)
+        path.addArc(tangent1End: CGPoint(x: rect.maxX, y: rect.minY), tangent2End: CGPoint(x: rect.maxX - r, y: rect.minY), radius: r)
+        path.addLine(to: CGPoint(x: rect.minX, y: rect.minY))
+        path.closeSubpath()
+        return path
+    }
+
+    /// Digits converted to vector outline for subpixel sharpness and jitter-free rendering
+    private static func outline(_ text: String, size: CGFloat, kernValue: CGFloat = kern) -> CGPath {
+        let font = NSFont.systemFont(ofSize: size, weight: .semibold)
+        let attributes: [NSAttributedString.Key: Any] = [.font: font, .kern: kernValue]
         let line = CTLineCreateWithAttributedString(NSAttributedString(string: text, attributes: attributes))
         let path = CGMutablePath()
         for run in CTLineGetGlyphRuns(line) as! [CTRun] {
             let runAttributes = CTRunGetAttributes(run) as NSDictionary
-            let font = runAttributes[kCTFontAttributeName as String] as! CTFont
+            let runFont = runAttributes[kCTFontAttributeName as String] as! CTFont
             let count = CTRunGetGlyphCount(run)
             var glyphs = [CGGlyph](repeating: 0, count: count)
             var positions = [CGPoint](repeating: .zero, count: count)
             CTRunGetGlyphs(run, CFRange(location: 0, length: count), &glyphs)
             CTRunGetPositions(run, CFRange(location: 0, length: count), &positions)
             for i in 0..<count {
-                guard let glyphPath = CTFontCreatePathForGlyph(font, glyphs[i], nil) else { continue }
+                guard let glyphPath = CTFontCreatePathForGlyph(runFont, glyphs[i], nil) else { continue }
                 path.addPath(glyphPath, transform: CGAffineTransform(translationX: positions[i].x, y: positions[i].y))
             }
         }
         return path
     }
 
-    /// One size for every level: the largest at which the widest case ("100" next to the bolt) still fits.
-    private static let fontSize: CGFloat = {
-        var size: CGFloat = 11
-        while size > 7 && outline("100", size: size).boundingBoxOfPath.width + max(boltGap + boltWidth, pauseGap + pauseWidth) > bodyRect.width - 4.0 {
-            size -= 0.25
-        }
-        return size
-    }()
-
-    static func image(pct: Int, isCharging: Bool, isExtConnected: Bool, isLowPower: Bool = false, isDark: Bool, monochrome: Bool = false) -> NSImage {
+    static func image(
+        pct: Int,
+        isCharging: Bool,
+        isExtConnected: Bool,
+        isLowPower: Bool = false,
+        isDark: Bool,
+        monochrome: Bool = true,
+        holdStyle: HoldSymbolStyle = .pause
+    ) -> NSImage {
         let level = max(0, min(100, pct))
         let isHolding = isExtConnected && !isCharging
+        let isColored = isLowPower || (level <= 20 && !isExtConnected) || (isCharging && !monochrome)
 
-        return NSImage(size: size, flipped: false) { _ in
+        let img = NSImage(size: size, flipped: false) { _ in
             guard let ctx = NSGraphicsContext.current?.cgContext else { return false }
-            let base: NSColor = isDark ? .white : NSColor(white: 0.10, alpha: 1.0)
+            let base: NSColor = isColored ? (isDark ? .white : NSColor(white: 0.10, alpha: 1.0)) : .black
 
-            // Same colour code as the system indicator: yellow in Low Power Mode, green while charging, red when low
+            // Apple system status item colors:
+            // - Low Power Mode: System Yellow
+            // - Low Battery (<= 20% on battery): System Red
+            // - Charging: Pure white in monochrome mode (Apple macOS native), systemGreen if monochrome is disabled
+            // - Normal: Base (White / Dark)
             let fill: NSColor
             if isLowPower {
                 fill = isDark ? NSColor(red: 1.0, green: 0.84, blue: 0.04, alpha: 1.0) : NSColor(red: 0.86, green: 0.62, blue: 0.0, alpha: 1.0)
-            } else if isCharging && !monochrome {
-                fill = NSColor(red: 0.19, green: 0.82, blue: 0.35, alpha: 1.0)
             } else if level <= 20 && !isExtConnected {
                 fill = NSColor(red: 1.0, green: 0.27, blue: 0.23, alpha: 1.0)
+            } else if isCharging && !monochrome {
+                fill = NSColor(red: 0.20, green: 0.83, blue: 0.39, alpha: 1.0)
             } else {
                 fill = base
             }
 
-            // Proportions follow the system indicator, widened slightly so "100" fits at the same size as every other level
             let body = bodyRect
-            let bodyPath = NSBezierPath(roundedRect: body, xRadius: 4, yRadius: 4)
+            let bodyPath = NSBezierPath(roundedRect: body, xRadius: bodyCornerRadius, yRadius: bodyCornerRadius)
+            let capPath = makeCapPath(in: capRect)
 
-            let cap = NSBezierPath()
-            let capX = body.maxX + 1.1
-            cap.move(to: NSPoint(x: capX, y: body.midY - 2.3))
-            cap.curve(to: NSPoint(x: capX, y: body.midY + 2.3),
-                      controlPoint1: NSPoint(x: capX + 2.3, y: body.midY - 2.0), controlPoint2: NSPoint(x: capX + 2.3, y: body.midY + 2.0))
-            cap.close()
-            base.withAlphaComponent(0.48).setFill()
-            cap.fill()
+            // Translucent unfilled battery shell and terminal cap
+            let emptyColor = base.withAlphaComponent(emptyAlpha)
+            ctx.setFillColor(emptyColor.cgColor)
+            ctx.addPath(capPath)
+            ctx.fillPath()
 
             ctx.beginTransparencyLayer(auxiliaryInfo: nil)
 
-            base.withAlphaComponent(0.48).setFill()
+            emptyColor.setFill()
             bodyPath.fill()
 
+            // Dynamic battery level fill
             ctx.saveGState()
             bodyPath.addClip()
             fill.setFill()
-            NSRect(x: body.minX, y: body.minY, width: max(2.5, body.width * CGFloat(level) / 100.0), height: body.height).fill()
+            let fillWidth = max(2.5, body.width * CGFloat(level) / 100.0)
+            NSRect(x: body.minX, y: body.minY, width: fillWidth, height: body.height).fill()
             ctx.restoreGState()
 
-            // State glyph right after the number: a slim bolt while charging, pause bars while held on the adapter.
-            // Drawn as paths: SF Symbols carry side bearings that leave a gap next to the digits at this size.
-            let glyphPath = NSBezierPath()
-            var glyphWidth: CGFloat = 0
+            // State Glyph Logic:
+            // 1. isCharging (actively charging): Always show Apple native Lightning Bolt ⚡
+            // 2. isHolding (adapter connected, but charge held at limit, e.g. 80%):
+            //    Show Hold Symbol (Pause || or Plug 🔌 or Bolt ⚡ according to preference)
+            // 3. On battery: Show percentage digits only
+            let symbolPath: CGPath?
             if isCharging {
-                let pts: [(CGFloat, CGFloat)] = [(3.0, 9.4), (0, 4.0), (1.9, 4.0), (1.5, 0), (4.6, 5.5), (2.6, 5.5)]
-                glyphPath.move(to: NSPoint(x: pts[0].0, y: pts[0].1))
-                for p in pts.dropFirst() { glyphPath.line(to: NSPoint(x: p.0, y: p.1)) }
-                glyphPath.close()
-                glyphWidth = boltWidth
+                symbolPath = boltPath
             } else if isHolding {
-                glyphPath.appendRoundedRect(NSRect(x: 0, y: 1.6, width: 1.3, height: 6.2), xRadius: 0.45, yRadius: 0.45)
-                glyphPath.appendRoundedRect(NSRect(x: 2.3, y: 1.6, width: 1.3, height: 6.2), xRadius: 0.45, yRadius: 0.45)
-                glyphWidth = pauseWidth
+                switch holdStyle {
+                case .pause:
+                    symbolPath = pausePath
+                case .plug:
+                    symbolPath = plugPath
+                case .bolt:
+                    symbolPath = boltPath
+                }
+            } else {
+                symbolPath = nil
             }
-            let hasGlyph = glyphWidth > 0
+            let hasGlyph = symbolPath != nil
+            let symGap: CGFloat = 0.8
 
-            // Regular-width SF at semibold weight, set tight, same size at every level
-            let gap: CGFloat = isHolding ? pauseGap : (hasGlyph ? boltGap : 0)
-            let digits = outline("\(level)", size: fontSize)
-            let ink = digits.boundingBoxOfPath
-            let contentWidth = ink.width + gap + glyphWidth
-            let startX = body.midX - contentWidth / 2
+            // Font sizing calibrated to Apple's native 8.0pt digit height (SF Pro Semibold)
+            let fontSize: CGFloat = (level == 100 && hasGlyph) ? 8.2 : (level == 100 ? 9.2 : 10.4)
+            let kernValue: CGFloat = level == 100 ? -0.25 : kern
+            let digits = outline("\(level)", size: fontSize, kernValue: kernValue)
+            let textBounds = digits.boundingBoxOfPath
 
-            // Knock the number and the glyph out of the body, like the system battery indicator
+            let symBounds = symbolPath?.boundingBoxOfPath ?? .zero
+            let contentWidth = textBounds.width + (hasGlyph ? (symGap + symBounds.width) : 0)
+            let startX = (body.midX - contentWidth / 2.0).rounded()
+
+            // Knock out digits and glyph from the battery body (Apple system effect)
             ctx.setBlendMode(.destinationOut)
             ctx.setFillColor(NSColor.black.cgColor)
-            var place = CGAffineTransform(translationX: startX - ink.minX, y: body.midY - ink.midY)
+
+            var place = CGAffineTransform(
+                translationX: startX - textBounds.minX,
+                y: (body.midY - textBounds.midY).rounded()
+            )
             if let placed = digits.copy(using: &place) {
                 ctx.addPath(placed)
                 ctx.fillPath()
             }
-            if hasGlyph {
-                let moved = glyphPath.copy() as! NSBezierPath
-                moved.transform(using: AffineTransform(translationByX: startX + ink.width + gap, byY: body.midY - 4.7))
-                NSColor.black.setFill()
-                moved.fill()
-            }
-            ctx.setBlendMode(.normal)
 
+            if let path = symbolPath {
+                let symX = startX + textBounds.width + symGap
+                let symY = (body.midY - symBounds.midY).rounded()
+                var placeSym = CGAffineTransform(
+                    translationX: symX - symBounds.minX,
+                    y: symY - symBounds.minY
+                )
+                if let placedSym = path.copy(using: &placeSym) {
+                    ctx.addPath(placedSym)
+                    ctx.fillPath()
+                }
+            }
+
+            ctx.setBlendMode(.normal)
             ctx.endTransparencyLayer()
             return true
         }
+        if !isColored {
+            img.isTemplate = true
+        }
+        return img
     }
 }
