@@ -22,7 +22,7 @@ final class BatteryHistoryManager {
               let items = try? JSONDecoder().decode([HistoryCacheItem].self, from: data) else { return [] }
         let cutoff = Date().addingTimeInterval(-24 * 3600).timeIntervalSince1970
         return items
-            .filter { $0.t >= cutoff }
+            .filter { $0.t >= cutoff && $0.p >= 0.15 }
             .map { (Date(timeIntervalSince1970: $0.t), $0.p) }
     }
 
@@ -46,11 +46,13 @@ final class BatteryHistoryManager {
         var parsedEntries: [(Date, Double)] = []
         for line in raw.split(separator: "\n", omittingEmptySubsequences: true) {
             guard line.count > 26, line.first?.isNumber == true, line.contains("Charge") else { continue }
-            guard let range = line.range(of: #"Using (AC|BATT|Batt)\s*\(Charge:\s*\d+"#, options: .regularExpression),
-                  let colon = line[range].lastIndex(of: ":"),
-                  let pct = Double(line[range][line.index(after: colon)...].trimmingCharacters(in: .whitespaces)),
+            // Note: must require closing parenthesis ")" so truncated assertion lines like `Using Batt(Charge: 6` are rejected.
+            guard let range = line.range(of: #"Using (AC|BATT|Batt)\s*\(Charge:\s*(\d+)%?\)"#, options: .regularExpression),
+                  let colon = line[range].lastIndex(of: ":") else { continue }
+            let digitsSub = line[range][line.index(after: colon)...].filter { $0.isNumber }
+            guard let pct = Double(digitsSub),
                   let date = formatter.date(from: String(line.prefix(25))),
-                  date >= cutoff, date <= now, pct >= 0, pct <= 100 else { continue }
+                  date >= cutoff, date <= now, pct >= 15, pct <= 100 else { continue }
             parsedEntries.append((date, pct / 100.0))
         }
         return parsedEntries

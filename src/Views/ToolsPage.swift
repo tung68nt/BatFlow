@@ -7,6 +7,7 @@ struct ToolsPage: View {
     @ObservedObject var model: BatteryViewModel
     @ObservedObject var energy: EnergyMonitor
     @ObservedObject var care: BatteryCare
+    @ObservedObject var smartCharge = AppleSmartCharge.shared
     @ObservedObject var thermal = ThermalGuard.shared
     @Environment(\.colorScheme) private var colorScheme
 
@@ -17,6 +18,7 @@ struct ToolsPage: View {
             alertSection
             thermalSection
             runtimeSection
+            systemPreferencesSection
         }
         .onAppear { care.refreshNativeLimit(force: true) }
     }
@@ -24,48 +26,178 @@ struct ToolsPage: View {
     // MARK: Charge limit
 
     private var limitSection: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            SectionHeader(title: "Giới hạn sạc", caption: "Giữ pin dưới 100% là cách kéo dài tuổi thọ hiệu quả nhất")
-            HStack(alignment: .center, spacing: 16) {
-                ZStack {
-                    Circle()
-                        .stroke(Color.primary.opacity(0.10), lineWidth: 7)
-                    Circle()
-                        .trim(from: 0, to: CGFloat(care.effectiveLimit) / 100.0)
-                        .stroke(BatPalette.green(colorScheme), style: StrokeStyle(lineWidth: 7, lineCap: .round))
-                        .rotationEffect(.degrees(-90))
-                    Text("\(care.effectiveLimit)%")
-                        .font(Font.system(size: 17, weight: .semibold, design: .rounded).monospacedDigit())
-                }
-                .frame(width: 74, height: 74)
+        VStack(alignment: .leading, spacing: 12) {
+            SectionHeader(title: "Giới hạn sạc & Tối ưu hóa Apple", caption: "Đồng bộ thời gian thực với Quản lý Pin của Apple (thực thi ở cấp firmware)")
 
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(limitTitle)
-                        .font(.system(size: 13.5, weight: .semibold))
-                    Text(limitDetail)
-                        .font(.system(size: 11.5))
-                        .foregroundColor(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
+            VStack(alignment: .leading, spacing: 14) {
+                HStack(alignment: .center, spacing: 16) {
+                    ZStack {
+                        Circle()
+                            .stroke(Color.primary.opacity(0.10), lineWidth: 7)
+                        Circle()
+                            .trim(from: 0, to: CGFloat(care.effectiveLimit) / 100.0)
+                            .stroke(
+                                smartCharge.isPushToFullActive ? BatPalette.blue(colorScheme) : BatPalette.green(colorScheme),
+                                style: StrokeStyle(lineWidth: 7, lineCap: .round)
+                            )
+                            .rotationEffect(.degrees(-90))
+                        VStack(spacing: 0) {
+                            Text("\(care.effectiveLimit)%")
+                                .font(Font.system(size: 17, weight: .semibold, design: .rounded).monospacedDigit())
+                            if model.isExtConnected && smartCharge.isPushToFullActive {
+                                Text("Ghi đè")
+                                    .font(.system(size: 8.5, weight: .bold))
+                                    .foregroundColor(BatPalette.blue(colorScheme))
+                            }
+                        }
+                    }
+                    .frame(width: 74, height: 74)
+
+                    VStack(alignment: .leading, spacing: 4) {
+                        HStack(spacing: 6) {
+                            Text(limitTitle)
+                                .font(.system(size: 13.5, weight: .semibold))
+                            if model.isExtConnected && smartCharge.isPushToFullActive {
+                                Text("TẠM THỜI")
+                                    .font(.system(size: 9, weight: .bold))
+                                    .foregroundColor(.white)
+                                    .padding(.horizontal, 5)
+                                    .padding(.vertical, 2)
+                                    .background(Capsule().fill(BatPalette.blue(colorScheme)))
+                            }
+                        }
+                        Text(limitDetail)
+                            .font(.system(size: 11.5))
+                            .foregroundColor(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+
+                    Spacer(minLength: 10)
+
+                    VStack(alignment: .trailing, spacing: 8) {
+                        if model.isExtConnected {
+                            if smartCharge.isPushToFullActive {
+                                Button(action: { smartCharge.restoreLimit() }) {
+                                    HStack(spacing: 5) {
+                                        Image(systemName: "arrow.uturn.backward")
+                                        Text("Khôi phục \(smartCharge.configuredLimit)%")
+                                    }
+                                    .font(.system(size: 11.5, weight: .medium))
+                                }
+                            } else if smartCharge.isMCLSupported && smartCharge.configuredLimit < 100 {
+                                Button(action: { smartCharge.pushChargeToFull() }) {
+                                    HStack(spacing: 5) {
+                                        Image(systemName: "bolt.fill")
+                                        Text("Sạc đầy 100% ngay")
+                                    }
+                                    .font(.system(size: 11.5, weight: .semibold))
+                                    .foregroundColor(.white)
+                                    .padding(.horizontal, 10)
+                                    .padding(.vertical, 5.5)
+                                    .background(BatPalette.green(colorScheme))
+                                    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                                }
+                                .buttonStyle(PlainButtonStyle())
+                            }
+                        }
+
+                        Button("Mở Cài đặt Pin") { BatteryCare.openBatterySettings() }
+                    }
                 }
-                Spacer(minLength: 10)
-                Button("Mở Cài đặt Pin") { BatteryCare.openBatterySettings() }
+
+                if smartCharge.isMCLSupported {
+                    Divider()
+
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Chọn mức giới hạn sạc macOS (đồng bộ trực tiếp vào Cài đặt hệ thống):")
+                            .font(.system(size: 11.5, weight: .medium))
+                            .foregroundColor(.secondary)
+
+                        HStack(spacing: 8) {
+                            ForEach(smartCharge.availableLimits, id: \.self) { lim in
+                                let isSelected = (smartCharge.effectiveLimit == lim && !smartCharge.isPushToFullActive) ||
+                                                 (lim == 100 && (smartCharge.isPushToFullActive || !smartCharge.isMCLEnabled))
+                                Button(action: {
+                                    smartCharge.setLimit(lim)
+                                }) {
+                                    HStack(spacing: 4) {
+                                        if isSelected {
+                                            Image(systemName: "checkmark")
+                                                .font(.system(size: 10, weight: .bold))
+                                        }
+                                        Text(lim == 100 ? "100% (Không giới hạn)" : "\(lim)%")
+                                            .font(.system(size: 11.5, weight: isSelected ? .bold : .medium, design: .rounded))
+                                    }
+                                    .foregroundColor(isSelected ? .white : .primary)
+                                    .padding(.horizontal, 10)
+                                    .padding(.vertical, 5)
+                                    .background(
+                                        RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                            .fill(isSelected ? (lim == 100 ? BatPalette.blue(colorScheme) : BatPalette.green(colorScheme)) : Color.primary.opacity(0.08))
+                                    )
+                                }
+                                .buttonStyle(PlainButtonStyle())
+                            }
+                        }
+                    }
+                }
             }
             .padding(18)
             .contentCard()
+
+            // Card: Hide Apple's native battery icon to use only BatFlow
+            hideAppleIconCard
         }
     }
 
+    private var hideAppleIconCard: some View {
+        HStack(alignment: .center, spacing: 14) {
+            Image(systemName: "eye.slash.fill")
+                .font(.system(size: 20))
+                .foregroundColor(BatPalette.blue(colorScheme))
+                .frame(width: 36, height: 36)
+                .background(Circle().fill(BatPalette.blue(colorScheme).opacity(0.12)))
+
+            VStack(alignment: .leading, spacing: 3) {
+                Text("Ẩn biểu tượng Pin của Apple trong thanh menu")
+                    .font(.system(size: 12.5, weight: .semibold))
+                Text("BatFlow cung cấp đầy đủ thông số thời gian thực, điều khiển sạc và Energy Impact. Bạn có thể ẩn icon mặc định của Apple trong Cài đặt hệ thống › Trung tâm điều khiển › Pin.")
+                    .font(.system(size: 11))
+                    .foregroundColor(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            Spacer(minLength: 10)
+
+            Button(action: {
+                AppleSmartCharge.openControlCenterSettings()
+            }) {
+                HStack(spacing: 5) {
+                    Image(systemName: "gearshape")
+                    Text("Mở Trung tâm điều khiển")
+                }
+                .font(.system(size: 11.5, weight: .medium))
+            }
+        }
+        .padding(14)
+        .contentCard()
+    }
+
     private var limitTitle: String {
+        if model.isExtConnected && smartCharge.isPushToFullActive { return "Đang sạc đầy 100% (Ghi đè)" }
         if let limit = care.nativeLimit { return "macOS đang giới hạn sạc ở \(limit)%" }
         return care.nativeLimitSupported ? "Chưa đặt giới hạn sạc" : "Pin đang được sạc tới 100%"
     }
 
     private var limitDetail: String {
+        if model.isExtConnected && smartCharge.isPushToFullActive {
+            return "BatFlow đang tạm thời bỏ qua ngưỡng để sạc đầy 100%. Mức giới hạn \(smartCharge.configuredLimit)% sẽ tự động khôi phục khi bạn rút sạc hoặc bấm nút khôi phục bên cạnh."
+        }
         if care.nativeLimit != nil {
-            return "Giới hạn do firmware thực thi nên vẫn có hiệu lực khi máy ngủ hoặc tắt. Đổi mức trong Cài đặt › Pin › Sạc. Muốn sạc đầy một lần, chọn “Sạc đầy ngay” trong menu pin của macOS."
+            return "Giới hạn do firmware thực thi trực tiếp trên Apple Silicon, vẫn có hiệu lực khi máy ngủ hoặc tắt. Bạn có thể đổi mức giới hạn ngay trên thanh menu hoặc nút bên dưới."
         }
         if care.nativeLimitSupported {
-            return "Máy này hỗ trợ giới hạn sạc gốc của macOS (80–100%). Nếu thường xuyên cắm sạc, đặt 80% trong Cài đặt › Pin › Sạc sẽ giảm đáng kể tốc độ chai pin."
+            return "Máy này hỗ trợ giới hạn sạc gốc của macOS (80–100%). Nếu thường xuyên cắm sạc, chọn 80% để giảm đáng kể tốc độ chai pin."
         }
         return "Phiên bản macOS này chưa có giới hạn sạc tùy chỉnh. Bật “Sạc pin được tối ưu hóa” trong Cài đặt › Pin và dùng nhắc ngưỡng bên dưới để chủ động rút sạc."
     }
@@ -397,6 +529,52 @@ struct ToolsPage: View {
                             .font(.system(size: 11.5))
                             .fixedSize(horizontal: false, vertical: true)
                     }
+                }
+            }
+            .padding(18)
+            .contentCard()
+        }
+    }
+
+    // MARK: - System Preferences & Application Info
+    private var systemPreferencesSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            SectionHeader(
+                title: "Cài đặt & Tùy chọn hệ thống",
+                caption: "Phím tắt mở Cài đặt Pin macOS, ẩn biểu tượng pin gốc Apple và thông tin ứng dụng"
+            )
+
+            VStack(alignment: .leading, spacing: 12) {
+                HStack(spacing: 12) {
+                    Button(action: { BatteryCare.openBatterySettings() }) {
+                        HStack(spacing: 6) {
+                            Image(systemName: "slider.horizontal.3")
+                            Text("Mở Cài đặt Pin macOS")
+                        }
+                    }
+
+                    Button(action: { AppleSmartCharge.openControlCenterSettings() }) {
+                        HStack(spacing: 6) {
+                            Image(systemName: "eye.slash")
+                            Text("Ẩn icon Pin gốc Apple (Control Center)")
+                        }
+                    }
+
+                    Spacer()
+                }
+
+                Divider()
+
+                HStack(spacing: 16) {
+                    Text("BatFlow v\(UpdateManager.shared.currentVersion)")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundColor(.secondary)
+
+                    Button("Kiểm tra bản cập nhật") {
+                        DashboardWindowController.shared.onCheckUpdateRequested?()
+                    }
+
+                    Spacer()
                 }
             }
             .padding(18)

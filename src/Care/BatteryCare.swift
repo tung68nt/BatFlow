@@ -86,7 +86,15 @@ final class BatteryCare: ObservableObject {
     }
 
     /// The level macOS itself stops charging at, or 100 when no limit is set.
-    var effectiveLimit: Int { nativeLimit ?? 100 }
+    var effectiveLimit: Int {
+        if isOnAC && AppleSmartCharge.shared.isPushToFullActive { return 100 }
+        if AppleSmartCharge.shared.isMCLEnabled && AppleSmartCharge.shared.configuredLimit < 100 {
+            return AppleSmartCharge.shared.configuredLimit
+        }
+        return nativeLimit ?? 100
+    }
+
+    var smartCharge: AppleSmartCharge { AppleSmartCharge.shared }
 
     private func refreshLowPower() {
         if #available(macOS 12.0, *) {
@@ -94,11 +102,23 @@ final class BatteryCare: ObservableObject {
         }
     }
 
-    // MARK: Native macOS charge limit (read-only; changing it requires an Apple-private entitlement)
+    // MARK: Native macOS charge limit & Apple Smart Charging sync
 
-    /// powerd only lists the limit while a charger is attached, so the last reported value is kept
-    /// (and persisted) while on battery, and cleared only when AC is present and no limit is reported.
+    /// Syncs native charge limit from AppleSmartCharge and pmset
     func refreshNativeLimit(force: Bool = false) {
+        AppleSmartCharge.shared.refresh(force: force)
+        if AppleSmartCharge.shared.isMCLSupported {
+            self.nativeLimitSupported = true
+            if isOnAC && AppleSmartCharge.shared.isPushToFullActive {
+                self.nativeLimit = nil
+            } else if AppleSmartCharge.shared.isMCLEnabled && AppleSmartCharge.shared.configuredLimit < 100 {
+                self.nativeLimit = AppleSmartCharge.shared.configuredLimit
+            } else {
+                self.nativeLimit = nil
+            }
+            return
+        }
+
         guard !isReadingLimit, force || Date().timeIntervalSince(lastLimitRead) > 60 else { return }
         isReadingLimit = true
         lastLimitRead = Date()
@@ -160,10 +180,17 @@ final class BatteryCare: ObservableObject {
             let unplugged = isOnAC && !model.isExtConnected
             isOnAC = model.isExtConnected
             lastLimitRead = Date.distantPast
-            if unplugged { PowerLog.shared.noteUnplug(pct: model.currentPct) }
+            if unplugged {
+                PowerLog.shared.noteUnplug(pct: model.currentPct)
+                if AppleSmartCharge.shared.isPushToFullActive {
+                    AppleSmartCharge.shared.isPushToFullActive = false
+                    UserDefaults.standard.set(false, forKey: "care.pushToFullActive")
+                }
+            }
             // the system log shows the new power source a moment later
             DispatchQueue.main.asyncAfter(deadline: .now() + 3) { PowerLog.shared.reload() }
         }
+        AppleSmartCharge.shared.tick(model)
         refreshNativeLimit()
         evaluateAlerts(model)
         advanceScenario(model)

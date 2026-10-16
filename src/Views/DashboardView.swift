@@ -219,8 +219,10 @@ struct OverviewPage: View {
 
     private var statusText: String {
         if !model.hasBattery { return "Không tìm thấy pin" }
-        if model.isCharging { return "Đang sạc pin" }
         if model.isExtConnected {
+            if AppleSmartCharge.shared.isPushToFullActive { return "Nguồn ngoài • Đang sạc đầy 100% (Ghi đè)" }
+            if model.isCharging { return "Đang sạc pin" }
+            if AppleSmartCharge.shared.isOBCEngaged { return "Nguồn ngoài • Tối ưu hóa sạc Apple" }
             if model.isFullyCharged || model.currentPct >= 100 { return "Nguồn ngoài • Pin đầy" }
             if let limit = care.nativeLimit, model.currentPct >= limit - 1 { return "Nguồn ngoài • Giữ ở giới hạn \(limit)%" }
             return "Nguồn ngoài • Tạm dừng sạc"
@@ -229,16 +231,23 @@ struct OverviewPage: View {
     }
 
     private var statusIcon: String {
-        model.isCharging ? "bolt.fill" : (model.isExtConnected ? "pause.fill" : "battery.100")
+        if model.isExtConnected && (AppleSmartCharge.shared.isPushToFullActive || model.isCharging) { return "bolt.fill" }
+        return model.isExtConnected ? "pause.fill" : "battery.100"
     }
 
     private var etaTitle: String {
-        model.isCharging ? "Dự kiến đầy" : (model.isExtConnected ? "Trạng thái" : "Dự kiến còn")
+        if model.isExtConnected && (AppleSmartCharge.shared.isPushToFullActive || model.isCharging) { return "Dự kiến đầy" }
+        return model.isCharging ? "Dự kiến đầy" : (model.isExtConnected ? "Trạng thái" : "Dự kiến còn")
     }
 
     private var etaValue: String {
-        if model.isCharging { return model.getEstimatedFullString() }
-        if model.isExtConnected { return "Máy chạy bằng nguồn ngoài" }
+        if model.isExtConnected {
+            if AppleSmartCharge.shared.isPushToFullActive {
+                return model.timeToFullMinutes > 0 ? model.getEstimatedFullString() : "Đang nạp lên 100% (bỏ qua giới hạn)"
+            }
+            if model.isCharging { return model.getEstimatedFullString() }
+            return "Máy chạy bằng nguồn ngoài"
+        }
         return model.getEstimatedEmptyString()
     }
 
@@ -261,16 +270,50 @@ struct OverviewPage: View {
                 VStack(alignment: .leading, spacing: 8) {
                     Text("\(model.currentPct)%")
                         .font(Font.system(size: 54, weight: .semibold, design: .rounded).monospacedDigit())
-                    HStack(spacing: 6) {
-                        Image(systemName: statusIcon)
-                            .font(.system(size: 10.5, weight: .semibold))
-                        Text(statusText)
-                            .font(.system(size: 12, weight: .medium))
+                    HStack(spacing: 8) {
+                        HStack(spacing: 6) {
+                            Image(systemName: statusIcon)
+                                .font(.system(size: 10.5, weight: .semibold))
+                            Text(statusText)
+                                .font(.system(size: 12, weight: .medium))
+                        }
+                        .foregroundColor(accent)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 4.5)
+                        .background(Capsule().fill(accent.opacity(0.16)))
+
+                        if model.isExtConnected {
+                            if AppleSmartCharge.shared.isPushToFullActive {
+                                Button(action: { AppleSmartCharge.shared.restoreLimit() }) {
+                                    HStack(spacing: 4) {
+                                        Image(systemName: "arrow.uturn.backward")
+                                            .font(.system(size: 9.5, weight: .bold))
+                                        Text("Khôi phục \(AppleSmartCharge.shared.configuredLimit)%")
+                                            .font(.system(size: 11, weight: .semibold))
+                                    }
+                                    .foregroundColor(BatPalette.blue(colorScheme))
+                                    .padding(.horizontal, 9)
+                                    .padding(.vertical, 4)
+                                    .background(Capsule().fill(BatPalette.blue(colorScheme).opacity(0.14)))
+                                }
+                                .buttonStyle(PlainButtonStyle())
+                            } else if AppleSmartCharge.shared.isMCLSupported && AppleSmartCharge.shared.configuredLimit < 100 && (model.currentPct >= AppleSmartCharge.shared.configuredLimit - 1 || model.isHolding) {
+                                Button(action: { AppleSmartCharge.shared.pushChargeToFull() }) {
+                                    HStack(spacing: 4) {
+                                        Image(systemName: "bolt.badge.checkmark")
+                                            .font(.system(size: 10, weight: .bold))
+                                        Text("Sạc đầy 100% ngay")
+                                            .font(.system(size: 11, weight: .semibold))
+                                    }
+                                    .foregroundColor(.white)
+                                    .padding(.horizontal, 9)
+                                    .padding(.vertical, 4)
+                                    .background(Capsule().fill(BatPalette.green(colorScheme)))
+                                }
+                                .buttonStyle(PlainButtonStyle())
+                            }
+                        }
                     }
-                    .foregroundColor(accent)
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 4.5)
-                    .background(Capsule().fill(accent.opacity(0.16)))
                 }
                 Spacer()
                 VStack(alignment: .trailing, spacing: 3) {

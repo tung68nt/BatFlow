@@ -7,13 +7,14 @@ struct BatFiPopoverView: View {
     @ObservedObject var updater = UpdateManager.shared
     @ObservedObject var energy = EnergyMonitor.shared
     @ObservedObject var care = BatteryCare.shared
+    @ObservedObject var smartCharge = AppleSmartCharge.shared
     @ObservedObject var hover = PopoverHover.shared
     @ObservedObject var powerLog = PowerLog.shared
     @Environment(\.colorScheme) var colorScheme
     var onOpenDashboard: () -> Void
     var onOpenTools: () -> Void
+    var onOpenSettingsMenu: () -> Void
     var onCheckUpdate: () -> Void
-    var onOpenAbout: () -> Void
     var onQuit: () -> Void
 
     static let cornerRadius: CGFloat = 22
@@ -23,8 +24,10 @@ struct BatFiPopoverView: View {
     var colorDivider: Color { Color.primary.opacity(isDark ? 0.14 : 0.10) }
 
     private var statusText: String {
-        if model.isCharging { return "Đang sạc" }
         if model.isExtConnected {
+            if smartCharge.isPushToFullActive { return "Sạc đầy 100%" }
+            if model.isCharging { return "Đang sạc" }
+            if smartCharge.isOBCEngaged { return "Tối ưu hóa sạc" }
             if let limit = care.nativeLimit, model.currentPct >= limit - 1 { return "Giữ ở \(limit)%" }
             return model.currentPct >= 100 ? "Pin đầy" : "Tạm dừng sạc"
         }
@@ -32,12 +35,18 @@ struct BatFiPopoverView: View {
     }
 
     private var etaLabel: String {
-        model.isCharging ? "Dự kiến đầy" : (model.isExtConnected ? "Chế độ" : "Dự kiến còn")
+        if model.isExtConnected && (model.isCharging || smartCharge.isPushToFullActive) { return "Dự kiến đầy" }
+        return model.isCharging ? "Dự kiến đầy" : (model.isExtConnected ? "Chế độ" : "Dự kiến còn")
     }
 
     private var etaValue: String {
-        if model.isCharging { return model.getEstimatedFullString() }
-        if model.isExtConnected { return "Máy chạy bằng nguồn ngoài" }
+        if model.isExtConnected {
+            if smartCharge.isPushToFullActive {
+                return model.timeToFullMinutes > 0 ? model.getEstimatedFullString() : "Đang nạp lên 100% (bỏ qua giới hạn)"
+            }
+            if model.isCharging { return model.getEstimatedFullString() }
+            return "Máy chạy bằng nguồn ngoài"
+        }
         return model.getEstimatedEmptyString()
     }
 
@@ -49,19 +58,21 @@ struct BatFiPopoverView: View {
 
             header
 
-            VStack(spacing: 6) {
-                infoRow(etaLabel, etaValue, valueColor: model.isCharging ? accent : .primary)
+            VStack(spacing: 5.5) {
+                infoRow(etaLabel, etaValue, valueColor: (model.isCharging || smartCharge.isPushToFullActive) ? accent : .primary)
                 infoRow("Nguồn cấp điện", model.powerSourceStr)
                 if !model.isExtConnected, let awake = powerLog.awakeSecondsSinceUnplug(), let unplug = powerLog.lastUnplug {
                     infoRow("Đã chạy từ lúc rút sạc", "\(DashboardFormat.hm(awake)) (rút lúc \(DashboardFormat.shortClock.string(from: unplug.date)))")
                 }
-                infoRow("Số chu kỳ sạc", "\(model.cycleCount) / \(model.designCycleCount) lần")
+                infoRow("Chu kỳ sạc", "\(model.cycleCount) / \(model.designCycleCount) lần")
                 infoRow("Nhiệt độ pin", model.tempC > 0 ? String(format: "%.1f°C", model.tempC) : "—", valueColor: model.tempC >= 38 ? BatPalette.red(colorScheme) : .primary)
                 infoRow("Sức khỏe pin", healthText)
-                if let limit = care.nativeLimit {
-                    infoRow("Giới hạn sạc macOS", "\(limit)%")
+                if smartCharge.isMCLSupported {
+                    chargeLimitRow
                 }
             }
+
+            chargeControlWell
 
             if let kind = care.scenario, let step = care.currentStep {
                 Button(action: onOpenTools) {
@@ -131,7 +142,7 @@ struct BatFiPopoverView: View {
         .padding(.horizontal, 16)
         .padding(.top, 14)
         .padding(.bottom, 12)
-        .frame(width: 326)
+        .frame(width: 338)
         .background(PanelBackground(cornerRadius: BatFiPopoverView.cornerRadius))
         .clipShape(RoundedRectangle(cornerRadius: BatFiPopoverView.cornerRadius, style: .continuous))
         .ignoresSafeArea()
@@ -191,13 +202,13 @@ struct BatFiPopoverView: View {
 
     private var header: some View {
         HStack(alignment: .center, spacing: 10) {
-            BatteryGlyph(pct: model.currentPct, tint: accent, isCharging: model.isCharging)
+            BatteryGlyph(pct: model.currentPct, tint: accent, isCharging: model.isExtConnected && model.isCharging)
                 .frame(width: 38, height: 19)
             Text("\(model.currentPct)%")
                 .font(Font.system(size: 26, weight: .semibold, design: .rounded).monospacedDigit())
             Spacer()
             HStack(spacing: 5) {
-                Image(systemName: model.isCharging ? "bolt.fill" : (model.isExtConnected ? "pause.fill" : "minus"))
+                Image(systemName: (model.isExtConnected && (model.isCharging || smartCharge.isPushToFullActive)) ? "bolt.fill" : (model.isExtConnected ? "pause.fill" : "minus"))
                     .font(.system(size: 9.5, weight: .bold))
                 Text(statusText)
                     .font(.system(size: 11, weight: .semibold))
@@ -259,6 +270,136 @@ struct BatFiPopoverView: View {
         }
     }
 
+    private var chargeLimitRow: some View {
+        HStack(alignment: .center) {
+            Text("Giới hạn sạc")
+                .font(.system(size: 11))
+                .foregroundColor(.secondary)
+                .lineLimit(1)
+                .fixedSize(horizontal: true, vertical: false)
+            Spacer(minLength: 6)
+            HStack(spacing: 4) {
+                ForEach(smartCharge.availableLimits, id: \.self) { lim in
+                    let isSelected = (smartCharge.effectiveLimit == lim && !smartCharge.isPushToFullActive) ||
+                                     (lim == 100 && (smartCharge.isPushToFullActive || !smartCharge.isMCLEnabled))
+                    Button(action: {
+                        smartCharge.setLimit(lim)
+                    }) {
+                        Text(lim == 100 ? "100%" : "\(lim)%")
+                            .font(.system(size: 10.5, weight: isSelected ? .bold : .medium, design: .rounded))
+                            .foregroundColor(isSelected ? .white : .primary)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2.5)
+                            .background(
+                                Capsule()
+                                    .fill(isSelected ? (lim == 100 ? BatPalette.blue(colorScheme) : BatPalette.green(colorScheme)) : Color.primary.opacity(0.08))
+                            )
+                    }
+                    .buttonStyle(PlainButtonStyle())
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var chargeControlWell: some View {
+        if model.isExtConnected {
+            if smartCharge.isPushToFullActive {
+                HStack(spacing: 8) {
+                    Image(systemName: "bolt.fill")
+                        .font(.system(size: 11, weight: .bold))
+                        .foregroundColor(BatPalette.green(colorScheme))
+                    VStack(alignment: .leading, spacing: 1.5) {
+                        Text("Đang sạc đầy 100%")
+                            .font(.system(size: 11, weight: .semibold))
+                        Text("Tạm thời bỏ qua giới hạn để sạc đầy")
+                            .font(.system(size: 9.5))
+                            .foregroundColor(.secondary)
+                    }
+                    Spacer()
+                    Button(action: {
+                        smartCharge.restoreLimit()
+                    }) {
+                        HStack(spacing: 4) {
+                            Image(systemName: "arrow.uturn.backward")
+                                .font(.system(size: 9, weight: .bold))
+                            Text("Khôi phục \(smartCharge.configuredLimit)%")
+                                .font(.system(size: 10, weight: .semibold))
+                        }
+                        .foregroundColor(BatPalette.blue(colorScheme))
+                        .padding(.horizontal, 7)
+                        .padding(.vertical, 3.5)
+                        .background(Capsule().fill(BatPalette.blue(colorScheme).opacity(0.14)))
+                    }
+                    .buttonStyle(PlainButtonStyle())
+                }
+                .padding(.horizontal, 10)
+                .padding(.vertical, 7)
+                .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Color.primary.opacity(0.06)))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .strokeBorder(BatPalette.green(colorScheme).opacity(0.35), lineWidth: 0.8)
+                )
+            } else if smartCharge.isMCLSupported && smartCharge.configuredLimit < 100 && (model.currentPct >= smartCharge.configuredLimit - 1 || model.isHolding) {
+                Button(action: {
+                    smartCharge.pushChargeToFull()
+                }) {
+                    HStack(spacing: 7) {
+                        Image(systemName: "bolt.badge.checkmark")
+                            .font(.system(size: 12, weight: .bold))
+                        VStack(alignment: .leading, spacing: 1) {
+                            Text("Sạc đầy 100% ngay")
+                                .font(.system(size: 11.5, weight: .semibold))
+                            Text("Tạm thời sạc vượt qua ngưỡng \(smartCharge.configuredLimit)%")
+                                .font(.system(size: 9.5))
+                                .foregroundColor(.white.opacity(0.85))
+                        }
+                        Spacer()
+                        Image(systemName: "chevron.right")
+                            .font(.system(size: 10, weight: .bold))
+                    }
+                    .foregroundColor(.white)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 6.5)
+                    .background(
+                        LinearGradient(
+                            gradient: Gradient(colors: [
+                                Color(red: 0.10, green: 0.65, blue: 0.40),
+                                Color(red: 0.05, green: 0.55, blue: 0.85)
+                            ]),
+                            startPoint: .leading, endPoint: .trailing
+                        )
+                    )
+                    .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                }
+                .buttonStyle(PlainButtonStyle())
+            } else if smartCharge.isOBCEngaged {
+                Button(action: {
+                    smartCharge.pushChargeToFull()
+                }) {
+                    HStack(spacing: 7) {
+                        Image(systemName: "bolt.fill")
+                            .font(.system(size: 11, weight: .bold))
+                        VStack(alignment: .leading, spacing: 1) {
+                            Text("Sạc đầy ngay (Bỏ qua tạm dừng)")
+                                .font(.system(size: 11.5, weight: .semibold))
+                            Text("Apple đang tạm giữ sạc • Nhấn để sạc đầy 100%")
+                                .font(.system(size: 9.5))
+                                .foregroundColor(.white.opacity(0.85))
+                        }
+                        Spacer()
+                    }
+                    .foregroundColor(.white)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 6)
+                    .background(BatPalette.blue(colorScheme))
+                    .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                }
+                .buttonStyle(PlainButtonStyle())
+            }
+        }
+    }
+
     private var appsWell: some View {
         VStack(alignment: .leading, spacing: 5) {
             HStack {
@@ -289,10 +430,10 @@ struct BatFiPopoverView: View {
     private var actions: some View {
         VStack(spacing: 1) {
             actionRow("Báo cáo phân tích chi tiết", symbol: "chart.xyaxis.line", badge: "⌘O", action: onOpenDashboard)
-            actionRow("Công cụ & kịch bản pin", symbol: "wand.and.stars", badge: nil, action: onOpenTools)
-            actionRow("Kiểm tra bản cập nhật", symbol: "arrow.triangle.2.circlepath",
-                      badge: updater.isUpdateAvailable ? "Có bản mới" : nil, badgeProminent: true, action: onCheckUpdate)
-            actionRow("Giới thiệu BatFlow", symbol: "info.circle", badge: "v\(updater.currentVersion)", action: onOpenAbout)
+            actionRow("Cài đặt & Tiện ích", symbol: "gearshape",
+                      badge: updater.isUpdateAvailable ? "Có bản mới" : nil,
+                      badgeProminent: updater.isUpdateAvailable,
+                      action: onOpenSettingsMenu)
             actionRow("Thoát BatFlow", symbol: "power", badge: "⌘Q", action: onQuit)
         }
         .padding(.horizontal, -8)

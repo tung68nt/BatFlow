@@ -54,7 +54,6 @@ class BatteryViewModel: ObservableObject {
         self.recordedHistory = BatteryHistoryManager.shared.loadCachedHistory()
         fetchAppleOfficialHealth()
         updateData()
-        recomputeHistoryPoints()
         fetchHistoricalLogsIfNeeded()
     }
 
@@ -71,15 +70,19 @@ class BatteryViewModel: ObservableObject {
         let l3 = timeFormatter.string(from: now)
         self.chartLabels = [l0, l1, l2, l3]
         
-        let curPctNormalized = max(0.0, min(1.0, Double(self.currentPct) / 100.0))
-        if self.recordedHistory.isEmpty || abs((self.recordedHistory.last?.1 ?? 0) - curPctNormalized) >= 0.005 || now.timeIntervalSince(self.recordedHistory.last?.0 ?? Date.distantPast) >= 60 {
-            self.recordedHistory.append((now, curPctNormalized))
-            BatteryHistoryManager.shared.saveCachedHistory(self.recordedHistory)
+        if self.currentPct > 0 {
+            let curPctNormalized = max(0.0, min(1.0, Double(self.currentPct) / 100.0))
+            if self.recordedHistory.isEmpty || abs((self.recordedHistory.last?.1 ?? 0) - curPctNormalized) >= 0.005 || now.timeIntervalSince(self.recordedHistory.last?.0 ?? Date.distantPast) >= 60 {
+                self.recordedHistory.append((now, curPctNormalized))
+                BatteryHistoryManager.shared.saveCachedHistory(self.recordedHistory)
+            }
         }
         
         let dayAgo = now.addingTimeInterval(-24 * 3600)
-        self.recordedHistory = self.recordedHistory.filter { $0.0 >= dayAgo }
+        self.recordedHistory = self.recordedHistory.filter { $0.0 >= dayAgo && $0.1 >= 0.15 }
         let sorted = self.recordedHistory.sorted(by: { $0.0 < $1.0 })
+        
+        let effectivePct = self.currentPct > 0 ? Double(self.currentPct) / 100.0 : (sorted.last?.1 ?? 1.0)
         
         let numSteps = 13
         let stepSeconds = (12.0 * 3600.0) / Double(numSteps - 1)
@@ -90,7 +93,7 @@ class BatteryViewModel: ObservableObject {
             let timeStr = timeFormatter.string(from: t)
             
             if i == numSteps - 1 {
-                newPoints.append((time: timeStr, pct: curPctNormalized))
+                newPoints.append((time: timeStr, pct: effectivePct))
             } else {
                 let candidates = sorted.filter { $0.0 <= t }
                 if let latestBefore = candidates.last {
@@ -98,7 +101,7 @@ class BatteryViewModel: ObservableObject {
                 } else if let firstEver = sorted.first {
                     newPoints.append((time: timeStr, pct: firstEver.1))
                 } else {
-                    newPoints.append((time: timeStr, pct: curPctNormalized))
+                    newPoints.append((time: timeStr, pct: effectivePct))
                 }
             }
         }
@@ -121,7 +124,7 @@ class BatteryViewModel: ObservableObject {
                 if !parsed.isEmpty {
                     // Merging runs on every launch: keep one sample per minute so repeats do not pile up
                     var seen = Set(self.recordedHistory.map { Int($0.0.timeIntervalSince1970 / 60) })
-                    for entry in parsed where seen.insert(Int(entry.0.timeIntervalSince1970 / 60)).inserted {
+                    for entry in parsed where entry.1 >= 0.15 && seen.insert(Int(entry.0.timeIntervalSince1970 / 60)).inserted {
                         self.recordedHistory.append(entry)
                     }
                     BatteryHistoryManager.shared.saveCachedHistory(self.recordedHistory)
