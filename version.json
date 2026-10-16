@@ -1,11 +1,11 @@
 {
-  "version": "1.1.9",
-  "build": "2026.10.07",
-  "title": "BatFlow v1.1.9 • Bản vá Menu Bar Battery Icon Replica 1:1 Apple HIG",
-  "releaseNotes": "• Chuẩn hóa biểu tượng Pin Menu Bar chuẩn xác 1:1 theo Apple macOS: Chiều cao 12.0pt (24px @2x), góc bo squircle 4.5pt, đầu cực dương vòm chữ D (D-shaped dome) đồng nhất.\n• Phân biệt trực quan trạng thái Sạc vs Hold: Tự động hiển thị Tia sét vector (⚡) khi pin đang nạp điện; chuyển sang biểu tượng Tạm dừng (||) thanh mảnh bo tròn dạng viên thuốc (pill) khi ở chế độ Giữ sạc (Hold) ở ngưỡng giới hạn (80%).\n• Khắc rỗng vector (.destinationOut) sắc nét: Cắt rỗng liền mạch xuyên qua cả phần pin nạp lẫn phần vỏ mờ, kích hoạt chế độ Dynamic Template (isTemplate) thích ứng hoàn hảo với mọi hình nền sáng / tối macOS.",
-  "downloadUrl": "https://github.com/tung68nt/BatFlow/releases/download/v1.1.9/BatFlow-v1.1.9.dmg",
-  "sha256": "0255d4a74ff73ad93ee562ca828d74c8a8eb4fe6125a696a994beb5a999447b1",
-  "publishedAt": "2026-10-07",
+  "version": "1.2.0",
+  "build": "2026.10.16",
+  "title": "BatFlow v1.2.0 • Push Sạc Đầy 100% & Điều Khiển Giới Hạn Sạc Đồng Bộ Apple",
+  "releaseNotes": "• Tính năng Push Sạc Đầy 100% ngay: Bỏ qua tạm thời ngưỡng giới hạn sạc (80%) hoặc tạm dừng sạc tối ưu của Apple để nạp đầy 100% ngay từ thanh Menu Bar Popover và Dashboard.\n• Điều khiển Giới hạn Sạc trực tiếp (80%, 85%, 90%, 95%, 100%): Tùy chọn mức giới hạn sạc mong muốn chỉ bằng 1 cú nhấp, tự động đồng bộ thời gian thực với Quản lý Pin gốc của macOS ở cấp firmware.\n• Thay thế hoàn toàn icon Pin của Apple: Tích hợp đầy đủ tính năng thông số pin, cảnh báo nhiệt độ, công suất nạp/xả thời gian thực, Energy Impact và phím tắt mở Trung tâm điều khiển để ẩn biểu tượng pin mặc định của Apple.\n• Đo công suất cấp cho thiết bị ngoài: Hiển thị số W từng cổng USB-C đang cấp cho SSD rời, điện thoại, hub... ngay trên Dashboard và sơ đồ cổng; mục \"Máy đang tiêu thụ\" giờ chỉ tính riêng tải của máy, còn ước tính thời gian dùng pin vẫn tính cả thiết bị ngoài.",
+  "downloadUrl": "https://github.com/tung68nt/BatFlow/releases/download/v1.2.0/BatFlow-v1.2.0.dmg",
+  "sha256": "6569ddd633b073c569533abc706d04b526fed6bf2c50f7a3727d1a44507d038c",
+  "publishedAt": "2026-10-16",
   "minOSVersion": "11.0",
-  "fileSize": "2.0 MB"
+  "fileSize": "2.1 MB"
 }
