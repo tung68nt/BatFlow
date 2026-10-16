@@ -462,8 +462,8 @@ struct ToolsPage: View {
     }
 
     private var runtimeEstimate: String {
-        guard model.sysLoadW > 0.5, remainingWh > 0 else { return "—" }
-        let hours = remainingWh / model.sysLoadW
+        guard model.totalLoadW > 0.5, remainingWh > 0 else { return "—" }
+        let hours = remainingWh / model.totalLoadW
         return String(format: "%dh %02dm", Int(hours), Int((hours - floor(hours)) * 60))
     }
 
@@ -474,7 +474,7 @@ struct ToolsPage: View {
                 HStack(alignment: .top, spacing: 16) {
                     StatTile(label: "Năng lượng còn trong pin", value: remainingWh > 0 ? String(format: "%.1f", remainingWh) : "—", unit: "Wh",
                              sub: "\(model.remainingCap) mAh ở \(String(format: "%.2f", model.voltage)) V")
-                    StatTile(label: "Dùng được với tải hiện tại", value: runtimeEstimate, sub: String(format: "Nếu giữ mức %.1f W", model.sysLoadW))
+                    StatTile(label: "Dùng được với tải hiện tại", value: runtimeEstimate, sub: String(format: "Nếu giữ mức %.1f W", model.totalLoadW))
                     StatTile(label: "Chế độ nguồn điện thấp", value: care.lowPowerMode ? "Đang bật" : "Đang tắt",
                              sub: care.lowPowerMode ? "Giảm xung CPU và độ sáng" : "Bật để kéo dài thời gian dùng",
                              valueColor: care.lowPowerMode ? BatPalette.green(colorScheme) : .primary)

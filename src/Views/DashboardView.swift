@@ -346,7 +346,8 @@ struct OverviewPage: View {
                          sub: powerLog.sessionStart.map { "Từ \(DashboardFormat.clock.string(from: $0))" } ?? "Đang đọc nhật ký nguồn")
                 StatTile(label: "Tổng màn hình sáng hôm nay", value: DashboardFormat.hms(powerLog.liveScreenSeconds(now: now)), sub: "Tích lũy từ 00:00")
                 StatTile(label: "Máy đang tiêu thụ", value: DashboardFormat.watts(model.sysLoadW), unit: "W",
-                         sub: String(format: "Pin %.2f V • %d mA", model.voltage, model.amperage))
+                         sub: model.accessoryW > 0 ? String(format: "Đã trừ %.1f W cấp cho thiết bị ngoài", model.accessoryW)
+                                                   : String(format: "Pin %.2f V • %d mA", model.voltage, model.amperage))
                 awakeTile
                 StatTile(label: "Nhiệt độ pin", value: model.tempC > 0 ? String(format: "%.1f", model.tempC) : "—", unit: model.tempC > 0 ? "°C" : "",
                          sub: model.tempC <= 0 ? "Máy không công bố cảm biến" : (model.tempC >= 38 ? "Nóng, nên giảm tải" : (model.tempC >= 35 ? "Hơi ấm" : "Bình thường")),
@@ -379,7 +380,7 @@ struct OverviewPage: View {
 
     private var powerSection: some View {
         VStack(alignment: .leading, spacing: 10) {
-            SectionHeader(title: "Phân bổ điện năng & nguồn sạc", caption: "Dòng nạp, công suất adapter và tải của máy")
+            SectionHeader(title: "Phân bổ điện năng & nguồn sạc", caption: "Dòng nạp, công suất adapter, tải của máy và thiết bị ngoài")
             VStack(alignment: .leading, spacing: 14) {
                 HStack(spacing: 12) {
                     ZStack {
@@ -407,7 +408,12 @@ struct OverviewPage: View {
                     } else {
                         StatTile(label: "Trạng thái nguồn", value: "Dùng pin", sub: "Không có củ sạc kết nối", valueColor: BatPalette.orange(colorScheme))
                     }
-                    StatTile(label: "Máy đang tiêu thụ", value: DashboardFormat.watts(model.sysLoadW), unit: "W", sub: "Tải phần cứng hệ thống")
+                    StatTile(label: "Máy đang tiêu thụ", value: DashboardFormat.watts(model.sysLoadW), unit: "W",
+                             sub: model.accessoryW > 0 ? "Không gồm thiết bị ngoài" : "Tải phần cứng hệ thống")
+                    if model.accessoryW > 0 {
+                        StatTile(label: "Cấp cho thiết bị ngoài", value: DashboardFormat.watts(model.accessoryW), unit: "W",
+                                 sub: accessoryDetail, valueColor: Color.purple)
+                    }
                     StatTile(label: batteryFlowLabel, value: batteryFlowValue, unit: "W", sub: batteryFlowDetail, valueColor: batteryFlowColor)
                 }
 
@@ -445,6 +451,14 @@ struct OverviewPage: View {
         return model.chargerWatts > 0 ? "\(protocolName) • Adapter \(Int(model.chargerWatts.rounded())) W" : protocolName
     }
 
+    private var accessoryDetail: String {
+        let outs = model.portOutputs
+        if outs.count == 1, let o = outs.first {
+            return String(format: "USB-C %d • %.2f V • %.0f mA", o.portNumber, o.volts, o.amps * 1000)
+        }
+        return outs.map { String(format: "USB-C %d: %.1f W", $0.portNumber, $0.watts) }.joined(separator: " • ")
+    }
+
     private var batteryFlowLabel: String {
         model.netWatts > 0.3 ? "Dòng nạp vào pin" : (model.netWatts < -0.3 ? "Dòng xả từ pin" : "Dòng qua pin")
     }
@@ -466,18 +480,22 @@ struct OverviewPage: View {
     }
 
     private var weakChargerWarning: String? {
-        guard model.isExtConnected, model.chargerWatts > 0, model.netWatts < -1.0, model.sysLoadW > model.chargerWatts else { return nil }
+        guard model.isExtConnected, model.chargerWatts > 0, model.netWatts < -1.0, model.totalLoadW > model.chargerWatts else { return nil }
         return String(format: "Củ sạc %.0f W nhỏ hơn mức máy đang dùng (%.1f W), pin phải bù %.1f W. Hãy dùng củ sạc công suất lớn hơn hoặc giảm tải.",
-                      model.chargerWatts, model.sysLoadW, abs(model.netWatts))
+                      model.chargerWatts, model.totalLoadW, abs(model.netWatts))
     }
 
     private var flowMeter: some View {
-        let total = max(model.chargerWatts, model.sysLoadW + max(0, model.netWatts), 1)
+        let total = max(model.chargerWatts, model.totalLoadW + max(0, model.netWatts), 1)
         let sysShare = CGFloat(min(1, model.sysLoadW / total))
-        let batShare = CGFloat(min(1 - Double(sysShare), max(0, model.netWatts) / total))
+        let accShare = CGFloat(min(1 - Double(sysShare), model.accessoryW / total))
+        let batShare = CGFloat(min(1 - Double(sysShare + accShare), max(0, model.netWatts) / total))
         return VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 14) {
                 legendDot(BatPalette.blue(colorScheme), String(format: "Máy dùng %.1f W", model.sysLoadW))
+                if model.accessoryW > 0 {
+                    legendDot(Color.purple, String(format: "Thiết bị ngoài %.1f W", model.accessoryW))
+                }
                 legendDot(BatPalette.green(colorScheme), String(format: "Nạp pin %.1f W", max(0, model.netWatts)))
                 legendDot(Color.primary.opacity(0.18), "Dư công suất")
                 Spacer()
@@ -485,6 +503,9 @@ struct OverviewPage: View {
             GeometryReader { geo in
                 HStack(spacing: 2) {
                     Capsule().fill(BatPalette.blue(colorScheme)).frame(width: max(3, geo.size.width * sysShare))
+                    if accShare > 0.005 {
+                        Capsule().fill(Color.purple).frame(width: max(3, geo.size.width * accShare))
+                    }
                     if batShare > 0.005 {
                         Capsule().fill(BatPalette.green(colorScheme)).frame(width: max(3, geo.size.width * batShare))
                     }
@@ -537,7 +558,7 @@ struct OverviewPage: View {
                     .padding(.vertical, 8)
             }
             ForEach(ports) { port in
-                PortChip(port: port, watts: model.chargerWatts, isCharging: model.isCharging, accent: accent)
+                PortChip(port: port, watts: model.chargerWatts, isCharging: model.isCharging, output: model.portOutput(for: port), accent: accent)
             }
         }
         .padding(14)
@@ -657,6 +678,7 @@ struct PortChip: View {
     var port: HardwarePort
     var watts: Double
     var isCharging: Bool
+    var output: PortPowerOut? = nil
     var accent: Color
     @Environment(\.colorScheme) private var colorScheme
 
@@ -696,6 +718,14 @@ struct PortChip: View {
                     .padding(.horizontal, 8)
                     .padding(.vertical, 3)
                     .background(Capsule().fill(accent.opacity(0.16)))
+            } else if let output = output {
+                Text(String(format: "Cấp ra %.1f W", output.watts))
+                    .font(Font.system(size: 10.5, weight: .semibold).monospacedDigit())
+                    .foregroundColor(.purple)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 3)
+                    .background(Capsule().fill(Color.purple.opacity(0.14)))
+                    .help(String(format: "%.2f V • %.0f mA", output.volts, output.amps * 1000))
             } else if port.isConnected {
                 Text("Có thiết bị")
                     .font(.system(size: 10.5, weight: .medium))

@@ -7,6 +7,14 @@ import IOKit.ps
 // MARK: - History Point Type
 typealias HistoryPoint = (time: String, pct: Double)
 
+/// Power a USB-C port is currently delivering to an attached device (SSD, phone, hub...).
+struct PortPowerOut {
+    let portNumber: Int
+    let watts: Double
+    let volts: Double
+    let amps: Double
+}
+
 // MARK: - Battery Data Model (Realtime Automatic Polling)
 class BatteryViewModel: ObservableObject {
     @Published var hasBattery: Bool = true
@@ -17,7 +25,11 @@ class BatteryViewModel: ObservableObject {
     @Published var voltage: Double = 0.0
     @Published var amperage: Int = 0
     @Published var netWatts: Double = 0.0
+    /// The Mac's own draw, with power handed out to external devices already taken out.
     @Published var sysLoadW: Double = 0.0
+    /// Everything drawn from the battery/adapter, external devices included.
+    @Published var totalLoadW: Double = 0.0
+    @Published var portOutputs: [PortPowerOut] = []
     @Published var chargerWatts: Double = 0.0
     @Published var adapterVoltage: Double = 0.0
     @Published var adapterCurrent: Double = 0.0
@@ -40,6 +52,12 @@ class BatteryViewModel: ObservableObject {
 
     var powerPort: HardwarePort? { ports.first { $0.isPowerSource } }
     var isHolding: Bool { isExtConnected && !isCharging }
+    var accessoryW: Double { portOutputs.reduce(0) { $0 + $1.watts } }
+
+    func portOutput(for port: HardwarePort) -> PortPowerOut? {
+        guard port.kind == .usbc else { return nil }
+        return portOutputs.first { $0.portNumber == port.number }
+    }
 
     // Dynamic 12-hour chart points (normalized 0.0 - 1.0) and time labels
     @Published var historyPoints: [HistoryPoint] = []
@@ -232,6 +250,7 @@ class BatteryViewModel: ObservableObject {
             var targetAdapterA: Double = 0.0
             var targetAppleHealth: Int = 0
             var telemetrySysLoad: Double = 0.0
+            var targetPortOutputs: [PortPowerOut] = []
             var batteryDict: [String: Any] = [:]
             var foundBattery = false
 
@@ -318,6 +337,21 @@ class BatteryViewModel: ObservableObject {
                         }
                     }
 
+                    // Per-port source telemetry: one entry for each USB-C port feeding a device (mW / mV / mA, PortIndex = port number)
+                    if let outs = dict["PowerOutDetails"] as? [[String: Any]] {
+                        for out in outs {
+                            guard let idx = self.intVal(out["PortIndex"]) else { continue }
+                            let filtered = self.doubleVal(out["FilteredPower"]) ?? 0
+                            let mW = filtered > 0 ? filtered : (self.doubleVal(out["Watts"]) ?? 0)
+                            let w = (mW + (self.doubleVal(out["VConnPower"]) ?? 0)) / 1000.0
+                            // USB-C sources top out at 240 W; anything outside that range is a wrapped counter
+                            guard w >= 0.05, w <= 240 else { continue }
+                            targetPortOutputs.append(PortPowerOut(portNumber: idx, watts: w,
+                                                                  volts: (self.doubleVal(out["AdapterVoltage"]) ?? 0) / 1000.0,
+                                                                  amps: (self.doubleVal(out["Current"]) ?? 0) / 1000.0))
+                        }
+                    }
+
                     var adapter: [String: Any]?
                     if let aDetails = dict["AdapterDetails"] as? [String: Any], !aDetails.isEmpty {
                         adapter = aDetails
@@ -363,7 +397,10 @@ class BatteryViewModel: ObservableObject {
             } else {
                 sysLoadRaw = abs(targetNetWatts)
             }
-            let targetSysLoad = round(sysLoadRaw * 10.0) / 10.0
+            // The measured load includes what the ports hand out to external devices; report the Mac's own share separately
+            let accessoryRaw = targetPortOutputs.reduce(0) { $0 + $1.watts }
+            let targetTotalLoad = round(sysLoadRaw * 10.0) / 10.0
+            let targetSysLoad = round(max(0, sysLoadRaw - accessoryRaw) * 10.0) / 10.0
 
             if !targetExtConnected {
                 targetWatts = 0
@@ -392,6 +429,8 @@ class BatteryViewModel: ObservableObject {
                 self.netWatts = targetNetWatts
                 self.tempC = targetTemp
                 self.sysLoadW = targetSysLoad
+                self.totalLoadW = targetTotalLoad
+                self.portOutputs = targetPortOutputs
                 self.cycleCount = targetCycles
                 self.designCycleCount = targetDesignCycles
                 self.fullCap = targetFullCap
