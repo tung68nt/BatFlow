@@ -333,16 +333,7 @@ final class AppleSmartCharge: ObservableObject {
 
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             guard let self = self else { return }
-            var success = false
-
-            let selSet = Selector(("setMCLLimit:error:"))
-            if client.responds(to: selSet) {
-                let fn = unsafeBitCast(client.method(for: selSet), to: SetLimitFn.self)
-                var err: NSError?
-                let res = fn(client, selSet, UInt8(newLimit), &err)
-                if res.boolValue { success = true }
-            }
-
+            // enableMCL: resets the stored limit to the default 80%, so it has to run before setMCLLimit:, never after
             if newLimit < 100 {
                 let selEn = Selector(("enableMCL:"))
                 if client.responds(to: selEn) {
@@ -351,7 +342,6 @@ final class AppleSmartCharge: ObservableObject {
                     _ = fn(client, selEn, &err)
                 }
             } else {
-                // If setting to 100, disable MCL or set to 100
                 let selDis = Selector(("disableMCL:"))
                 if client.responds(to: selDis) {
                     let fn = unsafeBitCast(client.method(for: selDis), to: BoolErrFn.self)
@@ -360,25 +350,52 @@ final class AppleSmartCharge: ObservableObject {
                 }
             }
 
+            let selSet = Selector(("setMCLLimit:error:"))
+            if client.responds(to: selSet) {
+                let fn = unsafeBitCast(client.method(for: selSet), to: SetLimitFn.self)
+                var err: NSError?
+                _ = fn(client, selSet, UInt8(newLimit), &err)
+            }
+
             // Also reset engagement override so the new limit takes effect immediately
             let selReset = Selector(("resetEngagementOverride"))
             if client.responds(to: selReset) {
                 _ = client.perform(selReset)
             }
 
+            // Trust only what powerd reports back, not the call's return value
+            var applied = newLimit
+            let selGet = Selector(("getMCLLimitWithError:"))
+            if client.responds(to: selGet) {
+                let fn = unsafeBitCast(client.method(for: selGet), to: GetLimitFn.self)
+                var err: NSError?
+                let raw = fn(client, selGet, &err)
+                if err == nil, raw >= 50, raw <= 100 { applied = Int(raw) }
+            }
+            let success = applied == newLimit
+
             DispatchQueue.main.async {
                 self.isBusy = false
                 self.isPushToFullActive = false
                 self.defaults.set(false, forKey: "care.pushToFullActive")
-                self.configuredLimit = newLimit
-                self.lastActionStatus = success ? "Đã đặt giới hạn \(newLimit)%" : nil
-                self.notify(
-                    id: "apple-charge-setlimit",
-                    title: newLimit < 100 ? "Đã đặt giới hạn sạc \(newLimit)%" : "Đã tắt giới hạn sạc (Sạc 100%)",
-                    body: newLimit < 100
-                        ? "macOS sẽ giữ pin ở ngưỡng \(newLimit)%. Cài đặt đã được đồng bộ với hệ thống."
-                        : "Pin sẽ được sạc đầy 100% khi cắm sạc."
-                )
+                self.configuredLimit = applied
+                self.isMCLEnabled = newLimit < 100
+                self.lastActionStatus = success ? "Đã đặt giới hạn \(newLimit)%" : "Không đặt được giới hạn \(newLimit)%"
+                if success {
+                    self.notify(
+                        id: "apple-charge-setlimit",
+                        title: newLimit < 100 ? "Đã đặt giới hạn sạc \(newLimit)%" : "Đã tắt giới hạn sạc (Sạc 100%)",
+                        body: newLimit < 100
+                            ? "macOS sẽ giữ pin ở ngưỡng \(newLimit)%. Cài đặt đã được đồng bộ với hệ thống."
+                            : "Pin sẽ được sạc đầy 100% khi cắm sạc."
+                    )
+                } else {
+                    self.notify(
+                        id: "apple-charge-setlimit",
+                        title: "Không đặt được giới hạn sạc \(newLimit)%",
+                        body: "macOS vẫn đang giữ giới hạn \(applied)%. Hãy thử lại hoặc đặt trong Cài đặt › Pin."
+                    )
+                }
                 self.refresh(force: true)
             }
         }
